@@ -8,7 +8,11 @@
     "build": "tsc oauth2_client.ts --declaration --outDir .",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["oauth2", "flowauth", "sdk"],
+  "keywords": [
+    "oauth2",
+    "flowauth",
+    "sdk"
+  ],
   "author": "vientofactory",
   "license": "MIT",
   "repository": {

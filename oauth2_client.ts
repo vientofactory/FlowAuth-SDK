@@ -153,11 +153,11 @@ class OAuth2Client {
   static async generatePKCE(): Promise<{ codeVerifier: string; codeChallenge: string }> {
     const array = new Uint8Array(32);
     crypto.getRandomValues(array);
-    const codeVerifier = btoa(String.fromCharCode(...array)).replace(/[+/=]/g, (m) => ({ '+': '-', '/': '_', '=': '' }[m] || ''));
+    const codeVerifier = btoa(String.fromCharCode(...array)).replace(/[+/=]/g, (m) => ({ "+": "-", "/": "_", "=": "" }[m] || ""));
     const encoder = new TextEncoder();
     const data = encoder.encode(codeVerifier);
-    const hash = await crypto.subtle.digest('SHA-256', data);
-    const codeChallenge = btoa(String.fromCharCode(...new Uint8Array(hash))).replace(/[+/=]/g, (m) => ({ '+': '-', '/': '_', '=': '' }[m] || ''));
+    const hash = await crypto.subtle.digest("SHA-256", data);
+    const codeChallenge = btoa(String.fromCharCode(...new Uint8Array(hash))).replace(/[+/=]/g, (m) => ({ "+": "-", "/": "_", "=": "" }[m] || ""));
     return { codeVerifier, codeChallenge };
   }
 }
