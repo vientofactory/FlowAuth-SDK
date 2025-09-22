@@ -23,14 +23,14 @@ interface UserInfo {
 /**
  * FlowAuth OAuth2 클라이언트 SDK
  */
-class OAuth2Client {
+class FlowAuthClient {
   private clientId: string;
   private clientSecret: string;
   private redirectUri: string;
   private server: string;
 
   /**
-   * OAuth2Client 생성자
+   * FlowAuthClient 생성자
    * @param server - FlowAuth 백엔드 서버 URL
    * @param clientId - OAuth2 클라이언트 ID
    * @param clientSecret - OAuth2 클라이언트 시크릿
@@ -169,4 +169,4 @@ class OAuth2Client {
   }
 }
 
-export default OAuth2Client;
+export default FlowAuthClient;
