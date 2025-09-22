@@ -23,7 +23,7 @@ interface UserInfo {
 /**
  * FlowAuth OAuth2 클라이언트 SDK
  */
-class FlowAuthClient {
+export class FlowAuthClient {
   private clientId: string;
   private clientSecret: string;
   private redirectUri: string;
@@ -168,5 +168,3 @@ class FlowAuthClient {
     return { codeVerifier, codeChallenge };
   }
 }
-
-export default FlowAuthClient;
