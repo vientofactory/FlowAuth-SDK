@@ -1,9 +1,9 @@
-/**
- * FlowAuth OAuth2 클라이언트 SDK
- * OAuth2 Authorization Code Grant 플로우를 위한 간단한 클라이언트 구현
- */
-
-declare var crypto: any;
+interface OAuth2ClientConfig {
+  server: string;
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+}
 
 interface TokenResponse {
   access_token: string;
@@ -20,24 +20,31 @@ interface UserInfo {
   [key: string]: any;
 }
 
-class OAuth2Client {
+/**
+ * FlowAuth OAuth2 클라이언트 SDK
+ */
+class FlowAuthClient {
   private clientId: string;
   private clientSecret: string;
   private redirectUri: string;
-  private backendHost: string;
+  private server: string;
 
   /**
-   * OAuth2Client 생성자
+   * FlowAuthClient 생성자
    * @param server - FlowAuth 백엔드 서버 URL
    * @param clientId - OAuth2 클라이언트 ID
    * @param clientSecret - OAuth2 클라이언트 시크릿
    * @param redirectUri - 인증 후 리다이렉트될 URI
    */
-  constructor(server: string, clientId: string, clientSecret: string, redirectUri: string) {
-    this.clientId = clientId;
-    this.clientSecret = clientSecret;
-    this.redirectUri = redirectUri;
-    this.backendHost = server;
+  constructor(config: OAuth2ClientConfig) {
+    this.clientId = config.clientId;
+    this.clientSecret = config.clientSecret;
+    this.redirectUri = config.redirectUri;
+    this.server = config.server;
+
+    if (!this.clientId || !this.clientSecret || !this.redirectUri || !this.server) {
+      throw new Error("All parameters (server, clientId, clientSecret, redirectUri) are required.");
+    }
   }
 
   /**
@@ -57,7 +64,7 @@ class OAuth2Client {
 
     if (state) params.set("state", state);
 
-    return `${this.backendHost}/oauth2/authorize?${params.toString()}`;
+    return `${this.server}/oauth2/authorize?${params.toString()}`;
   }
 
   /**
@@ -78,7 +85,7 @@ class OAuth2Client {
 
     if (codeVerifier) params.set("code_verifier", codeVerifier);
 
-    const response = await fetch(`${this.backendHost}/oauth2/token`, {
+    const response = await fetch(`${this.server}/oauth2/token`, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -102,7 +109,7 @@ class OAuth2Client {
    * @throws Error if the user info request fails
    */
   async getUserInfo(accessToken: string): Promise<UserInfo> {
-    const response = await fetch(`${this.backendHost}/oauth2/userinfo`, {
+    const response = await fetch(`${this.server}/oauth2/userinfo`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
@@ -129,7 +136,7 @@ class OAuth2Client {
       refresh_token: refreshToken,
     });
 
-    const response = await fetch(`${this.backendHost}/oauth2/token`, {
+    const response = await fetch(`${this.server}/oauth2/token`, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -162,4 +169,4 @@ class OAuth2Client {
   }
 }
 
-export default OAuth2Client;
+export default FlowAuthClient;

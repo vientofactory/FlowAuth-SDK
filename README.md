@@ -18,20 +18,21 @@ FlowAuth와의 OAuth2 통합을 위한 간단한 TypeScript/JavaScript SDK입니
 npm install flowauth-oauth2-sdk
 ```
 
-### 직접 다운로드
-
-`sdk/oauth2_client.js` 또는 `sdk/oauth2_client.ts` 파일을 프로젝트에 복사하여 사용하세요.
-
 ## 사용법
 
 ```javascript
-const OAuth2Client = require("./oauth2_client.js");
+const FlowAuthClient = require("flowauth-oauth2-sdk");
 
 // 또는 TypeScript에서
-// import OAuth2Client from "./oauth2_client";
+// import FlowAuthClient from "flowauth-oauth2-sdk";
 
 // 클라이언트 초기화
-const client = new OAuth2Client("https://flowauth-server.com", "your-client-id", "your-client-secret", "https://your-app.com/callback");
+const client = new FlowAuthClient({
+  server: "https://example.com",
+  clientId: "client-id",
+  clientSecret: "client-secret",
+  redirectUri: "https://example.com/callback",
+});
 
 // 1. 인증 URL 생성
 const authUrl = client.createAuthorizeUrl(["read:user", "email"]);
@@ -54,7 +55,7 @@ const userInfo = await client.getUserInfo(tokens.access_token);
 const newTokens = await client.refreshToken(tokens.refresh_token);
 
 // 5. PKCE 사용 예제
-const pkce = await OAuth2Client.generatePKCE();
+const pkce = await FlowAuthClient.generatePKCE();
 const authUrlWithPKCE = client.createAuthorizeUrl(["read:user"], null, pkce.codeChallenge);
 // ... 이후 exchangeCode에 codeVerifier 전달
 ```
