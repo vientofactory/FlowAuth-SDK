@@ -1,0 +1,76 @@
+# FlowAuth OAuth2 SDK
+
+FlowAuth와의 OAuth2 통합을 위한 간단한 TypeScript/JavaScript SDK입니다.
+
+## 특징
+
+- OAuth2 Authorization Code Grant 플로우 지원
+- PKCE (Proof Key for Code Exchange) 지원
+- TypeScript 타입 정의 제공
+- 에러 처리 강화
+- 간단한 최소 구현
+
+## 설치
+
+### npm을 사용하는 경우
+
+```bash
+npm install flowauth-oauth2-sdk
+```
+
+### 직접 다운로드
+
+`sdk/oauth2_client.js` 또는 `sdk/oauth2_client.ts` 파일을 프로젝트에 복사하여 사용하세요.
+
+## 사용법
+
+```javascript
+const OAuth2Client = require("./oauth2_client.js");
+
+// 또는 TypeScript에서
+// import OAuth2Client from "./oauth2_client";
+
+// 클라이언트 초기화
+const client = new OAuth2Client("https://flowauth-server.com", "your-client-id", "your-client-secret", "https://your-app.com/callback");
+
+// 1. 인증 URL 생성
+const authUrl = client.createAuthorizeUrl(["read:user", "email"]);
+console.log("인증 URL:", authUrl);
+
+// 사용자를 authUrl로 리다이렉트
+
+// 2. 콜백에서 코드 교환
+try {
+  const tokens = await client.exchangeCode("authorization-code-from-callback");
+  console.log("Tokens:", tokens);
+} catch (error) {
+  console.error("Token exchange failed:", error);
+}
+
+// 3. 사용자 정보 조회
+const userInfo = await client.getUserInfo(tokens.access_token);
+
+// 4. 토큰 리프래시 (필요시)
+const newTokens = await client.refreshToken(tokens.refresh_token);
+
+// 5. PKCE 사용 예제
+const pkce = await OAuth2Client.generatePKCE();
+const authUrlWithPKCE = client.createAuthorizeUrl(["read:user"], null, pkce.codeChallenge);
+// ... 이후 exchangeCode에 codeVerifier 전달
+```
+
+## 빌드
+
+TypeScript 파일을 컴파일하려면:
+
+```bash
+npm run build
+```
+
+## API 문서
+
+자세한 API 문서와 OAuth2 플로우 설명은 [OAUTH2_GUIDE.md](../OAUTH2_GUIDE.md)를 참조하세요.
+
+## 라이선스
+
+이 SDK는 FlowAuth 프로젝트의 일부입니다. 라이선스 정보는 [LICENSE](../LICENSE)를 참조하세요.

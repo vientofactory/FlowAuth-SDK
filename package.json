@@ -1,0 +1,18 @@
+{
+  "name": "flowauth-oauth2-client",
+  "version": "1.0.0",
+  "description": "OAuth2 client SDK for FlowAuth",
+  "main": "oauth2_client.js",
+  "types": "oauth2_client.d.ts",
+  "scripts": {
+    "build": "tsc oauth2_client.ts --declaration --outDir .",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["oauth2", "flowauth", "sdk"],
+  "author": "vientofactory",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vientofactory/FlowAuth-SDK.git"
+  }
+}
