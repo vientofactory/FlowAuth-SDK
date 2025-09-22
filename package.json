@@ -7,7 +7,8 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "oauth2",
@@ -16,10 +17,9 @@
   ],
   "author": "vientofactory",
   "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/vientofactory/FlowAuth-SDK.git"
-  },
+  "files": [
+    "dist"
+  ],
   "devDependencies": {
     "typescript": "^5.0.0",
     "vitest": "^3.0.0"

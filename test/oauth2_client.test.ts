@@ -2,7 +2,12 @@ import { describe, it, expect } from "vitest";
 import OAuth2Client from "../src";
 
 describe("OAuth2Client", () => {
-  const client = new OAuth2Client("https://example.com", "client-id", "client-secret", "https://example.com/callback");
+  const client = new OAuth2Client({
+    server: "https://example.com",
+    clientId: "client-id",
+    clientSecret: "client-secret",
+    redirectUri: "https://example.com/callback",
+  });
 
   it("should create authorize URL", () => {
     const url = client.createAuthorizeUrl(["read:user"], "state123");

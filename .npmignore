@@ -1,0 +1,18 @@
+# Source files
+src/
+test/
+
+# Config files
+tsconfig.json
+vitest.config.ts
+.gitignore
+
+# Development files
+*.log
+.DS_Store
+
+# Node modules (though usually handled by npm)
+node_modules/
+
+# Coverage reports
+coverage/

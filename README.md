@@ -31,7 +31,12 @@ const OAuth2Client = require("./oauth2_client.js");
 // import OAuth2Client from "./oauth2_client";
 
 // 클라이언트 초기화
-const client = new OAuth2Client("https://flowauth-server.com", "your-client-id", "your-client-secret", "https://your-app.com/callback");
+const client = new OAuth2Client({
+  server: "https://example.com",
+  clientId: "client-id",
+  clientSecret: "client-secret",
+  redirectUri: "https://example.com/callback",
+});
 
 // 1. 인증 URL 생성
 const authUrl = client.createAuthorizeUrl(["read:user", "email"]);
