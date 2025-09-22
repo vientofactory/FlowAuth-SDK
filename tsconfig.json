@@ -3,12 +3,11 @@
     "target": "ES2020",
     "module": "commonjs",
     "declaration": true,
-    "outDir": "./",
+    "outDir": "./dist",
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "skipLibCheck": true
   },
-  "include": ["oauth2_client.ts"],
-  "exclude": ["node_modules"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "test", "vitest.config.ts"]
 }

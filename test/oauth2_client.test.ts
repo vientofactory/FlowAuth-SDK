@@ -1,0 +1,23 @@
+import { describe, it, expect } from "vitest";
+import OAuth2Client from "../src";
+
+describe("OAuth2Client", () => {
+  const client = new OAuth2Client("https://example.com", "client-id", "client-secret", "https://example.com/callback");
+
+  it("should create authorize URL", () => {
+    const url = client.createAuthorizeUrl(["read:user"], "state123");
+    expect(url).toContain("response_type=code");
+    expect(url).toContain("client_id=client-id");
+    expect(url).toContain("redirect_uri=https%3A%2F%2Fexample.com%2Fcallback");
+    expect(url).toContain("scope=read%3Auser");
+    expect(url).toContain("state=state123");
+  });
+
+  it("should generate PKCE", async () => {
+    const pkce = await OAuth2Client.generatePKCE();
+    expect(pkce).toHaveProperty("codeVerifier");
+    expect(pkce).toHaveProperty("codeChallenge");
+    expect(typeof pkce.codeVerifier).toBe("string");
+    expect(typeof pkce.codeChallenge).toBe("string");
+  });
+});

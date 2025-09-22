@@ -59,12 +59,29 @@ const authUrlWithPKCE = client.createAuthorizeUrl(["read:user"], null, pkce.code
 // ... 이후 exchangeCode에 codeVerifier 전달
 ```
 
-## 빌드
+## 배포
 
-TypeScript 파일을 컴파일하려면:
+npm에 패키지를 배포하려면:
 
 ```bash
 npm run build
+npm publish
+```
+
+빌드 후 dist 폴더에 컴파일된 파일이 생성됩니다.
+
+## 테스트
+
+테스트를 실행하려면:
+
+```bash
+npm run test:run
+```
+
+또는 개발 중 감시 모드로:
+
+```bash
+npm test
 ```
 
 ## API 문서
