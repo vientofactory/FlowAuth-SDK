@@ -8,7 +8,7 @@ FlowAuth와의 OAuth2 통합을 위한 간단한 TypeScript/JavaScript SDK입니
 - PKCE (Proof Key for Code Exchange) 지원
 - 자동 토큰 리프래시
 - 토큰 저장 및 관리 (브라우저 sessionStorage/localStorage)
-- TypeScript 타입 정의 제공
+- **TypeScript 스코프 enum 제공** (타입 안전한 권한 관리)
 - 브라우저 및 Node.js 환경 지원
 - 강화된 에러 처리 (OAuth2Error 클래스)
 
@@ -111,6 +111,275 @@ const { authUrl, codeVerifier, state } = await client.createSecureAuthorizeUrl([
 const tokens = await client.exchangeCode("authorization-code", codeVerifier);
 ```
 
+### 스코프 활용 예제
+
+SDK는 TypeScript enum을 통해 타입 안전한 스코프 관리를 제공합니다:
+
+```javascript
+const { FlowAuthClient, OAuth2Scope, DEFAULT_SCOPES, SCOPE_DESCRIPTIONS } = require("flowauth-oauth2-client");
+
+const client = new FlowAuthClient({
+  server: "https://your-flowauth-server.com",
+  clientId: "your-client-id",
+  clientSecret: "your-client-secret",
+  redirectUri: "https://your-app.com/callback",
+});
+
+// 1. 기본 스코프 사용 (가장 일반적인 경우)
+const authUrl = client.createAuthorizeUrl(DEFAULT_SCOPES);
+console.log("기본 권한으로 인증:", authUrl);
+
+// 2. 특정 스코프만 요청
+const profileAuthUrl = client.createAuthorizeUrl([OAuth2Scope.READ_USER, OAuth2Scope.READ_PROFILE, OAuth2Scope.EMAIL]);
+console.log("프로필 정보 접근 인증:", profileAuthUrl);
+
+// 3. 파일 관리 권한 요청
+const fileAuthUrl = client.createAuthorizeUrl([OAuth2Scope.READ_USER, OAuth2Scope.UPLOAD_FILE, OAuth2Scope.READ_FILE, OAuth2Scope.DELETE_FILE]);
+console.log("파일 관리 인증:", fileAuthUrl);
+
+// 4. 관리자 권한 요청
+const adminAuthUrl = client.createAuthorizeUrl([OAuth2Scope.READ_CLIENT, OAuth2Scope.WRITE_CLIENT, OAuth2Scope.DELETE_CLIENT]);
+console.log("클라이언트 관리 인증:", adminAuthUrl);
+
+// 5. 스코프 설명 표시 (UI에서 사용자에게 권한 설명)
+console.log("요청할 권한들:");
+const requestedScopes = [OAuth2Scope.READ_USER, OAuth2Scope.EMAIL, OAuth2Scope.UPLOAD_FILE];
+requestedScopes.forEach((scope) => {
+  console.log(`- ${scope}: ${SCOPE_DESCRIPTIONS[scope]}`);
+});
+```
+
+### 실전 활용 패턴
+
+#### 사용자 프로필 애플리케이션
+
+```javascript
+const { FlowAuthClient, OAuth2Scope } = require("flowauth-oauth2-client");
+
+class UserProfileApp {
+  constructor() {
+    this.client = new FlowAuthClient({
+      server: "https://flowauth.example.com",
+      clientId: "profile-app",
+      clientSecret: "secret",
+      redirectUri: "https://profile-app.com/callback",
+    });
+  }
+
+  // 로그인 시작
+  async startLogin() {
+    const { authUrl, codeVerifier, state } = await this.client.createSecureAuthorizeUrl([
+      OAuth2Scope.READ_USER,
+      OAuth2Scope.READ_PROFILE,
+      OAuth2Scope.EMAIL,
+    ]);
+
+    // 세션에 PKCE 정보 저장
+    sessionStorage.setItem("oauth_code_verifier", codeVerifier);
+    sessionStorage.setItem("oauth_state", state);
+
+    // 사용자를 인증 페이지로 리다이렉트
+    window.location.href = authUrl;
+  }
+
+  // 콜백 처리
+  async handleCallback() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get("code");
+    const receivedState = urlParams.get("state");
+
+    const savedState = sessionStorage.getItem("oauth_state");
+    const codeVerifier = sessionStorage.getItem("oauth_code_verifier");
+
+    if (receivedState !== savedState) {
+      throw new Error("State 검증 실패");
+    }
+
+    // 토큰 교환 및 저장
+    await this.client.exchangeCode(code, codeVerifier);
+
+    // 세션 정리
+    sessionStorage.removeItem("oauth_code_verifier");
+    sessionStorage.removeItem("oauth_state");
+
+    // 메인 페이지로 리다이렉트
+    window.location.href = "/profile";
+  }
+
+  // 사용자 정보 표시
+  async displayUserProfile() {
+    try {
+      const userInfo = await this.client.getUserInfo();
+      console.log("사용자 정보:", userInfo);
+
+      // 프로필 UI 업데이트
+      this.updateProfileUI(userInfo);
+    } catch (error) {
+      console.error("프로필 로드 실패:", error);
+      // 로그인 페이지로 리다이렉트
+      this.startLogin();
+    }
+  }
+
+  updateProfileUI(userInfo) {
+    // 실제 애플리케이션에서는 DOM 업데이트
+    console.log(`환영합니다, ${userInfo.username || userInfo.email}!`);
+  }
+}
+```
+
+#### 파일 관리 애플리케이션
+
+```javascript
+const { FlowAuthClient, OAuth2Scope } = require("flowauth-oauth2-client");
+
+class FileManagerApp {
+  constructor() {
+    this.client = new FlowAuthClient({
+      server: "https://flowauth.example.com",
+      clientId: "file-manager",
+      clientSecret: "secret",
+      redirectUri: "https://filemanager.com/callback",
+    });
+  }
+
+  // 파일 권한으로 로그인
+  async loginForFileAccess() {
+    const { authUrl, codeVerifier, state } = await this.client.createSecureAuthorizeUrl([
+      OAuth2Scope.READ_USER,
+      OAuth2Scope.UPLOAD_FILE,
+      OAuth2Scope.READ_FILE,
+      OAuth2Scope.DELETE_FILE,
+    ]);
+
+    sessionStorage.setItem("oauth_code_verifier", codeVerifier);
+    sessionStorage.setItem("oauth_state", state);
+    window.location.href = authUrl;
+  }
+
+  // 파일 업로드
+  async uploadFile(file) {
+    const accessToken = this.client.getStoredAccessToken();
+    if (!accessToken) {
+      throw new Error("인증 필요");
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await fetch(`${this.client.server}/api/files/upload`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error("파일 업로드 실패");
+    }
+
+    return response.json();
+  }
+
+  // 파일 목록 조회
+  async listFiles() {
+    const accessToken = this.client.getStoredAccessToken();
+    if (!accessToken) {
+      throw new Error("인증 필요");
+    }
+
+    const response = await fetch(`${this.client.server}/api/files`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error("파일 목록 조회 실패");
+    }
+
+    return response.json();
+  }
+}
+```
+
+#### 권한 기반 UI 렌더링
+
+```javascript
+const { FlowAuthClient, OAuth2Scope, SCOPE_DESCRIPTIONS } = require("flowauth-oauth2-client");
+
+class PermissionBasedUI {
+  constructor(client) {
+    this.client = client;
+  }
+
+  // 현재 사용자의 권한에 따른 UI 렌더링
+  async renderUI() {
+    const tokenInfo = this.client.getTokenInfo();
+    if (!tokenInfo) {
+      this.renderLoginButton();
+      return;
+    }
+
+    const scopes = tokenInfo.scope ? tokenInfo.scope.split(" ") : [];
+
+    // 파일 관리 UI
+    if (scopes.includes(OAuth2Scope.UPLOAD_FILE)) {
+      this.renderFileUpload();
+    }
+
+    // 사용자 관리 UI (관리자만)
+    if (scopes.includes(OAuth2Scope.WRITE_CLIENT)) {
+      this.renderAdminPanel();
+    }
+
+    // 프로필 편집 UI
+    if (scopes.includes(OAuth2Scope.READ_PROFILE)) {
+      this.renderProfileEditor();
+    }
+  }
+
+  renderLoginButton() {
+    console.log("로그인 버튼 표시");
+    // 실제로는 DOM 조작
+  }
+
+  renderFileUpload() {
+    console.log("파일 업로드 UI 표시");
+  }
+
+  renderAdminPanel() {
+    console.log("관리자 패널 표시");
+  }
+
+  renderProfileEditor() {
+    console.log("프로필 편집 UI 표시");
+  }
+
+  // 권한 요청 UI
+  renderScopeRequest() {
+    console.log("추가 권한 요청:");
+    const additionalScopes = [OAuth2Scope.UPLOAD_FILE, OAuth2Scope.DELETE_FILE];
+
+    additionalScopes.forEach((scope) => {
+      console.log(`- ${SCOPE_DESCRIPTIONS[scope]}`);
+    });
+
+    // 추가 권한으로 재인증 링크 생성
+    const authUrl = this.client.createAuthorizeUrl(additionalScopes);
+    console.log("추가 권한 요청 URL:", authUrl);
+  }
+}
+
+// 사용 예시
+const client = new FlowAuthClient({
+  /* 설정 */
+});
+const ui = new PermissionBasedUI(client);
+ui.renderUI();
+```
+
 ### 고급 사용법
 
 ```javascript
@@ -163,6 +432,41 @@ npm test
 
 ## API 문서
 
+### OAuth2 스코프
+
+SDK는 다음과 같은 OAuth2 스코프들을 enum으로 제공합니다:
+
+```typescript
+enum OAuth2Scope {
+  READ_USER = "read:user", // 사용자 기본 정보 읽기
+  READ_PROFILE = "read:profile", // 사용자 프로필 읽기
+  UPLOAD_FILE = "upload:file", // 파일 업로드
+  READ_FILE = "read:file", // 파일 읽기
+  DELETE_FILE = "delete:file", // 파일 삭제
+  READ_CLIENT = "read:client", // 클라이언트 정보 읽기
+  WRITE_CLIENT = "write:client", // 클라이언트 정보 수정
+  DELETE_CLIENT = "delete:client", // 클라이언트 삭제
+  BASIC = "basic", // 기본 접근 권한
+  EMAIL = "email", // 사용자 이메일 주소 읽기
+}
+```
+
+**기본 스코프:**
+
+```typescript
+const DEFAULT_SCOPES = [OAuth2Scope.BASIC, OAuth2Scope.READ_USER, OAuth2Scope.READ_PROFILE];
+```
+
+**스코프 설명:**
+
+```typescript
+const SCOPE_DESCRIPTIONS = {
+  [OAuth2Scope.READ_USER]: "사용자 기본 정보 읽기",
+  [OAuth2Scope.READ_PROFILE]: "사용자 프로필 읽기",
+  // ... 기타 설명들
+};
+```
+
 ### FlowAuthClient 클래스
 
 #### 생성자
@@ -182,8 +486,8 @@ new FlowAuthClient(config: OAuth2ClientConfig)
 
 #### 메소드
 
-- `createAuthorizeUrl(scopes, state?, pkce?)`: 인증 URL 생성 (PKCE 지원)
-- `createSecureAuthorizeUrl(scopes?)`: PKCE와 State를 자동 생성하여 보안 인증 URL 생성
+- `createAuthorizeUrl(scopes: OAuth2Scope[], state?, pkce?)`: 인증 URL 생성 (PKCE 지원)
+- `createSecureAuthorizeUrl(scopes?: OAuth2Scope[])`: PKCE와 State를 자동 생성하여 보안 인증 URL 생성
 - `exchangeCode(code, codeVerifier?)`: Authorization Code를 토큰으로 교환
 - `getUserInfo(accessToken?)`: 사용자 정보 조회 (저장된 토큰 자동 사용)
 - `refreshToken(refreshToken?)`: 토큰 리프래시 (저장된 토큰 자동 사용)

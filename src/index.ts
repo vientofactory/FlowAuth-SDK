@@ -29,6 +29,39 @@ interface PKCECodes {
 }
 
 /**
+ * OAuth2 스코프 열거형
+ * FlowAuth에서 지원하는 권한 스코프들을 정의합니다.
+ */
+export enum OAuth2Scope {
+  /** 사용자 기본 정보 읽기 */
+  READ_USER = "read:user",
+  /** 사용자 프로필 읽기 */
+  READ_PROFILE = "read:profile",
+  /** 파일 업로드 */
+  UPLOAD_FILE = "upload:file",
+  /** 파일 읽기 */
+  READ_FILE = "read:file",
+  /** 파일 삭제 */
+  DELETE_FILE = "delete:file",
+  /** 클라이언트 정보 읽기 */
+  READ_CLIENT = "read:client",
+  /** 클라이언트 정보 수정 */
+  WRITE_CLIENT = "write:client",
+  /** 클라이언트 삭제 */
+  DELETE_CLIENT = "delete:client",
+  /** 기본 접근 권한 */
+  BASIC = "basic",
+  /** 사용자 이메일 주소 읽기 */
+  EMAIL = "email",
+}
+
+/**
+ * 기본 스코프 목록
+ * 새로운 클라이언트에 기본적으로 부여되는 스코프들입니다.
+ */
+export const DEFAULT_SCOPES: OAuth2Scope[] = [OAuth2Scope.BASIC, OAuth2Scope.READ_USER, OAuth2Scope.READ_PROFILE];
+
+/**
  * 환경 감지 및 호환성 유틸리티 클래스
  * 브라우저와 Node.js 환경 간의 API 차이를 처리합니다.
  */
@@ -282,7 +315,7 @@ export class FlowAuthClient {
    * 사용자를 FlowAuth 인증 페이지로 리다이렉트하기 위한 URL을 생성합니다.
    * 생성된 URL로 사용자를 이동시키면 OAuth2 인증 플로우가 시작됩니다.
    *
-   * @param scopes - 요청할 권한 스코프 배열 (기본값: ["read:user"])
+   * @param scopes - 요청할 권한 스코프 배열 (기본값: [OAuth2Scope.READ_USER])
    * @param state - CSRF 방지를 위한 상태값 (권장)
    * @param pkce - PKCE 코드 챌린지 (보안 강화용, 권장)
    * @returns 완성된 인증 URL
@@ -290,16 +323,16 @@ export class FlowAuthClient {
    * @example
    * ```typescript
    * // 기본 사용
-   * const authUrl = client.createAuthorizeUrl(['read:user', 'email'], 'random-state-123');
+   * const authUrl = client.createAuthorizeUrl([OAuth2Scope.READ_USER, OAuth2Scope.EMAIL], 'random-state-123');
    * window.location.href = authUrl;
    *
    * // PKCE와 함께 사용
    * const pkce = await FlowAuthClient.generatePKCE();
-   * const authUrl = client.createAuthorizeUrl(['read:user'], 'state', pkce);
+   * const authUrl = client.createAuthorizeUrl([OAuth2Scope.READ_USER], 'state', pkce);
    * // pkce.codeVerifier를 안전하게 저장하여 토큰 교환 시 사용
    * ```
    */
-  createAuthorizeUrl(scopes: string[] = ["read:user"], state?: string, pkce?: PKCECodes): string {
+  createAuthorizeUrl(scopes: OAuth2Scope[] = [OAuth2Scope.READ_USER], state?: string, pkce?: PKCECodes): string {
     const params = new URLSearchParams({
       response_type: "code",
       client_id: this.clientId,
@@ -669,13 +702,13 @@ export class FlowAuthClient {
    * PKCE와 State를 자동으로 생성하여 보안이 강화된 인증 URL을 생성합니다.
    * 이 메소드를 사용하면 별도로 PKCE 코드를 관리할 필요가 없습니다.
    *
-   * @param scopes - 요청할 권한 스코프 배열 (기본값: ["read:user"])
+   * @param scopes - 요청할 권한 스코프 배열 (기본값: [OAuth2Scope.READ_USER])
    * @returns 인증 URL과 PKCE 코드 검증자를 포함한 객체
    * @throws {Error} Crypto API를 사용할 수 없는 환경에서 발생
    *
    * @example
    * ```typescript
-   * const { authUrl, codeVerifier, state } = await client.createSecureAuthorizeUrl(['read:user', 'email']);
+   * const { authUrl, codeVerifier, state } = await client.createSecureAuthorizeUrl([OAuth2Scope.READ_USER, OAuth2Scope.EMAIL]);
    *
    * // 사용자를 인증 페이지로 리다이렉트
    * window.location.href = authUrl;
@@ -684,7 +717,7 @@ export class FlowAuthClient {
    * const tokens = await client.exchangeCode('auth-code', codeVerifier);
    * ```
    */
-  async createSecureAuthorizeUrl(scopes: string[] = ["read:user"]): Promise<{ authUrl: string; codeVerifier: string; state: string }> {
+  async createSecureAuthorizeUrl(scopes: OAuth2Scope[] = [OAuth2Scope.READ_USER]): Promise<{ authUrl: string; codeVerifier: string; state: string }> {
     const authParams = await FlowAuthClient.generateSecureAuthParams();
 
     const authUrl = this.createAuthorizeUrl(scopes, authParams.state, authParams.pkce);
