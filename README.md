@@ -56,7 +56,7 @@ const client = new FlowAuthClient({
 
 // 1. State 생성 및 인증 URL 생성
 const state = await FlowAuthClient.generateState();
-const authUrl = client.createAuthorizeUrl(["read:user", "email"], state);
+const authUrl = client.createAuthorizeUrl(["read:user", "read:profile"], state);
 console.log("인증 URL:", authUrl);
 // 사용자를 authUrl로 리다이렉트
 
@@ -105,7 +105,7 @@ const authUrl = client.createAuthorizeUrl(["read:user"], authParams.state, authP
 const tokens = await client.exchangeCode("authorization-code", authParams.pkce.codeVerifier);
 
 // 방법 3: 완전 자동화된 보안 인증 URL 생성 (가장 간단)
-const { authUrl, codeVerifier, state } = await client.createSecureAuthorizeUrl(["read:user", "email"]);
+const { authUrl, codeVerifier, state } = await client.createSecureAuthorizeUrl(["read:user", "read:profile"]);
 // authUrl로 사용자를 리다이렉트하고, codeVerifier와 state를 세션에 저장
 // 콜백에서:
 const tokens = await client.exchangeCode("authorization-code", codeVerifier);
