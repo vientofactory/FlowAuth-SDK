@@ -17,6 +17,18 @@ interface OAuth2ClientConfig {
 }
 
 /**
+ * PKCE (Proof Key for Code Exchange) 코드 객체 인터페이스
+ */
+interface PKCECodes {
+  /** PKCE 코드 검증자 */
+  codeVerifier: string;
+  /** PKCE 코드 챌린지 */
+  codeChallenge: string;
+  /** 코드 챌린지 메소드 (기본값: "S256") */
+  codeChallengeMethod?: string;
+}
+
+/**
  * 환경 감지 및 호환성 유틸리티 클래스
  * 브라우저와 Node.js 환경 간의 API 차이를 처리합니다.
  */
@@ -272,15 +284,22 @@ export class FlowAuthClient {
    *
    * @param scopes - 요청할 권한 스코프 배열 (기본값: ["read:user"])
    * @param state - CSRF 방지를 위한 상태값 (권장)
+   * @param pkce - PKCE 코드 챌린지 (보안 강화용, 권장)
    * @returns 완성된 인증 URL
    *
    * @example
    * ```typescript
+   * // 기본 사용
    * const authUrl = client.createAuthorizeUrl(['read:user', 'email'], 'random-state-123');
-   * window.location.href = authUrl; // 사용자를 인증 페이지로 리다이렉트
+   * window.location.href = authUrl;
+   *
+   * // PKCE와 함께 사용
+   * const pkce = await FlowAuthClient.generatePKCE();
+   * const authUrl = client.createAuthorizeUrl(['read:user'], 'state', pkce);
+   * // pkce.codeVerifier를 안전하게 저장하여 토큰 교환 시 사용
    * ```
    */
-  createAuthorizeUrl(scopes: string[] = ["read:user"], state?: string): string {
+  createAuthorizeUrl(scopes: string[] = ["read:user"], state?: string, pkce?: PKCECodes): string {
     const params = new URLSearchParams({
       response_type: "code",
       client_id: this.clientId,
@@ -289,6 +308,10 @@ export class FlowAuthClient {
     });
 
     if (state) params.set("state", state);
+    if (pkce) {
+      params.set("code_challenge", pkce.codeChallenge);
+      params.set("code_challenge_method", pkce.codeChallengeMethod || "S256");
+    }
 
     return `${this.server}/oauth2/authorize?${params.toString()}`;
   }
@@ -543,14 +566,14 @@ export class FlowAuthClient {
    * ```typescript
    * const pkce = await FlowAuthClient.generatePKCE();
    *
-   * // 인증 URL 생성 시 codeChallenge 사용
-   * const authUrl = client.createAuthorizeUrl(['read:user'], 'state', pkce.codeChallenge);
+   * // 인증 URL 생성 시 PKCE 객체 사용
+   * const authUrl = client.createAuthorizeUrl(['read:user'], 'state', pkce);
    *
    * // 토큰 교환 시 codeVerifier 사용
    * const tokens = await client.exchangeCode('auth-code', pkce.codeVerifier);
    * ```
    */
-  static async generatePKCE(): Promise<{ codeVerifier: string; codeChallenge: string }> {
+  static async generatePKCE(): Promise<PKCECodes> {
     const crypto = EnvironmentUtils.getCrypto();
     if (!crypto) {
       throw new Error("Crypto API is not available. Please use a browser environment or Node.js 15+ with crypto support.");
@@ -566,7 +589,11 @@ export class FlowAuthClient {
       /[+/=]/g,
       (m) => ({ "+": "-", "/": "_", "=": "" }[m] || "")
     );
-    return { codeVerifier, codeChallenge };
+    return {
+      codeVerifier,
+      codeChallenge,
+      codeChallengeMethod: "S256",
+    };
   }
 
   /**
@@ -601,6 +628,72 @@ export class FlowAuthClient {
     crypto.getRandomValues(array);
     const state = EnvironmentUtils.btoa(String.fromCharCode(...array)).replace(/[+/=]/g, (m) => ({ "+": "-", "/": "_", "=": "" }[m] || ""));
     return state;
+  }
+
+  /**
+   * PKCE와 State를 함께 생성
+   *
+   * 보안 강화를 위해 PKCE 코드와 State 파라미터를 함께 생성합니다.
+   * OAuth2 인증 플로우에서 CSRF 방지와 코드 교환 공격 방지에 모두 사용됩니다.
+   *
+   * @returns PKCE 코드와 State를 포함한 객체
+   * @throws {Error} Crypto API를 사용할 수 없는 환경에서 발생
+   *
+   * @example
+   * ```typescript
+   * const authParams = await FlowAuthClient.generateSecureAuthParams();
+   *
+   * // 인증 URL 생성
+   * const authUrl = client.createAuthorizeUrl(['read:user'], authParams.state, authParams.pkce);
+   *
+   * // 콜백에서 검증 및 토큰 교환
+   * const tokens = await client.exchangeCode('auth-code', authParams.pkce.codeVerifier);
+   * ```
+   */
+  static async generateSecureAuthParams(): Promise<{ pkce: PKCECodes; state: string }> {
+    const [pkce, state] = await Promise.all([this.generatePKCE(), this.generateState()]);
+
+    return {
+      pkce: {
+        codeVerifier: pkce.codeVerifier,
+        codeChallenge: pkce.codeChallenge,
+        codeChallengeMethod: "S256",
+      },
+      state,
+    };
+  }
+
+  /**
+   * PKCE를 사용한 보안 인증 URL 생성
+   *
+   * PKCE와 State를 자동으로 생성하여 보안이 강화된 인증 URL을 생성합니다.
+   * 이 메소드를 사용하면 별도로 PKCE 코드를 관리할 필요가 없습니다.
+   *
+   * @param scopes - 요청할 권한 스코프 배열 (기본값: ["read:user"])
+   * @returns 인증 URL과 PKCE 코드 검증자를 포함한 객체
+   * @throws {Error} Crypto API를 사용할 수 없는 환경에서 발생
+   *
+   * @example
+   * ```typescript
+   * const { authUrl, codeVerifier, state } = await client.createSecureAuthorizeUrl(['read:user', 'email']);
+   *
+   * // 사용자를 인증 페이지로 리다이렉트
+   * window.location.href = authUrl;
+   *
+   * // 콜백에서 토큰 교환 (codeVerifier와 state를 세션에 저장해두어야 함)
+   * const tokens = await client.exchangeCode('auth-code', codeVerifier);
+   * ```
+   */
+  async createSecureAuthorizeUrl(scopes: string[] = ["read:user"]): Promise<{ authUrl: string; codeVerifier: string; state: string }> {
+    const authParams = await FlowAuthClient.generateSecureAuthParams();
+
+    const authUrl = this.createAuthorizeUrl(scopes, authParams.state, authParams.pkce);
+
+    return {
+      authUrl,
+      codeVerifier: authParams.pkce.codeVerifier,
+      state: authParams.state,
+    };
   }
 
   /**

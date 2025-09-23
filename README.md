@@ -72,7 +72,7 @@ try {
     throw new Error("State mismatch - possible CSRF attack");
   }
 
-  const tokens = await client.exchangeCode(receivedCode, pkce.codeVerifier);
+  const tokens = await client.exchangeCode(receivedCode);
   console.log("Tokens:", tokens);
 } catch (error) {
   console.error("Authentication failed:", error.message);
@@ -93,15 +93,22 @@ client.logout();
 ### PKCE 및 State 사용 예제
 
 ```javascript
-// 보안 강화를 위한 PKCE 및 State 생성
+// 방법 1: 개별 생성 및 수동 관리
 const pkce = await FlowAuthClient.generatePKCE();
 const state = await FlowAuthClient.generateState();
-
-// 인증 URL에 PKCE와 State 포함
-const authUrl = client.createAuthorizeUrl(["read:user"], state, pkce.codeChallenge);
-
-// 콜백에서 코드 교환 시 codeVerifier 전달
+const authUrl = client.createAuthorizeUrl(["read:user"], state, pkce);
 const tokens = await client.exchangeCode("authorization-code", pkce.codeVerifier);
+
+// 방법 2: PKCE와 State를 함께 생성 (편의 메소드)
+const authParams = await FlowAuthClient.generateSecureAuthParams();
+const authUrl = client.createAuthorizeUrl(["read:user"], authParams.state, authParams.pkce);
+const tokens = await client.exchangeCode("authorization-code", authParams.pkce.codeVerifier);
+
+// 방법 3: 완전 자동화된 보안 인증 URL 생성 (가장 간단)
+const { authUrl, codeVerifier, state } = await client.createSecureAuthorizeUrl(["read:user", "email"]);
+// authUrl로 사용자를 리다이렉트하고, codeVerifier와 state를 세션에 저장
+// 콜백에서:
+const tokens = await client.exchangeCode("authorization-code", codeVerifier);
 ```
 
 ### 고급 사용법
@@ -175,7 +182,8 @@ new FlowAuthClient(config: OAuth2ClientConfig)
 
 #### 메소드
 
-- `createAuthorizeUrl(scopes, state?)`: 인증 URL 생성
+- `createAuthorizeUrl(scopes, state?, pkce?)`: 인증 URL 생성 (PKCE 지원)
+- `createSecureAuthorizeUrl(scopes?)`: PKCE와 State를 자동 생성하여 보안 인증 URL 생성
 - `exchangeCode(code, codeVerifier?)`: Authorization Code를 토큰으로 교환
 - `getUserInfo(accessToken?)`: 사용자 정보 조회 (저장된 토큰 자동 사용)
 - `refreshToken(refreshToken?)`: 토큰 리프래시 (저장된 토큰 자동 사용)
@@ -188,6 +196,7 @@ new FlowAuthClient(config: OAuth2ClientConfig)
 
 - `FlowAuthClient.generatePKCE()`: PKCE 챌린지 생성
 - `FlowAuthClient.generateState()`: OAuth2 State 파라미터 생성
+- `FlowAuthClient.generateSecureAuthParams()`: PKCE와 State를 함께 생성
 
 ### 에러 처리
 
