@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import OAuth2Client from "../src";
+import { FlowAuthClient } from "../src";
 
-describe("OAuth2Client", () => {
-  const client = new OAuth2Client({
+describe("FlowAuthClient", () => {
+  const client = new FlowAuthClient({
     server: "https://example.com",
     clientId: "client-id",
     clientSecret: "client-secret",
@@ -19,7 +19,7 @@ describe("OAuth2Client", () => {
   });
 
   it("should generate PKCE", async () => {
-    const pkce = await OAuth2Client.generatePKCE();
+    const pkce = await FlowAuthClient.generatePKCE();
     expect(pkce).toHaveProperty("codeVerifier");
     expect(pkce).toHaveProperty("codeChallenge");
     expect(typeof pkce.codeVerifier).toBe("string");
