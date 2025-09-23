@@ -25,4 +25,12 @@ describe("FlowAuthClient", () => {
     expect(typeof pkce.codeVerifier).toBe("string");
     expect(typeof pkce.codeChallenge).toBe("string");
   });
+
+  it("should generate state", async () => {
+    const state = await FlowAuthClient.generateState();
+    expect(typeof state).toBe("string");
+    expect(state.length).toBeGreaterThan(0);
+    // Base64url 형식 검증 (URL-safe 문자들로만 구성)
+    expect(state).toMatch(/^[A-Za-z0-9\-_]+$/);
+  });
 });

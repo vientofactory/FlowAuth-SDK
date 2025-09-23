@@ -570,6 +570,40 @@ export class FlowAuthClient {
   }
 
   /**
+   * OAuth2 State 파라미터 생성
+   *
+   * CSRF 공격 방지를 위한 state 파라미터를 생성합니다.
+   * OAuth2 인증 플로우에서 보안을 강화하기 위해 사용됩니다.
+   *
+   * @returns 랜덤하게 생성된 state 문자열
+   * @throws {Error} Crypto API를 사용할 수 없는 환경에서 발생
+   *
+   * @example
+   * ```typescript
+   * const state = await FlowAuthClient.generateState();
+   *
+   * // 인증 URL 생성 시 state 사용
+   * const authUrl = client.createAuthorizeUrl(['read:user'], state);
+   *
+   * // 콜백에서 state 검증
+   * if (receivedState !== state) {
+   *   throw new Error('State mismatch - possible CSRF attack');
+   * }
+   * ```
+   */
+  static async generateState(): Promise<string> {
+    const crypto = EnvironmentUtils.getCrypto();
+    if (!crypto) {
+      throw new Error("Crypto API is not available. Please use a browser environment or Node.js 15+ with crypto support.");
+    }
+
+    const array = new Uint8Array(32);
+    crypto.getRandomValues(array);
+    const state = EnvironmentUtils.btoa(String.fromCharCode(...array)).replace(/[+/=]/g, (m) => ({ "+": "-", "/": "_", "=": "" }[m] || ""));
+    return state;
+  }
+
+  /**
    * 저장된 액세스 토큰 가져오기
    *
    * 브라우저 스토리지에 저장된 액세스 토큰을 반환합니다.

@@ -54,17 +54,28 @@ const client = new FlowAuthClient({
   autoRefresh: true, // 자동 토큰 리프래시 활성화 (기본값: true)
 });
 
-// 1. 인증 URL 생성
-const authUrl = client.createAuthorizeUrl(["read:user", "email"], "random-state");
+// 1. State 생성 및 인증 URL 생성
+const state = await FlowAuthClient.generateState();
+const authUrl = client.createAuthorizeUrl(["read:user", "email"], state);
 console.log("인증 URL:", authUrl);
 // 사용자를 authUrl로 리다이렉트
 
-// 2. 콜백에서 코드 교환 (토큰이 자동으로 저장됨)
+// 2. 콜백에서 코드 교환 (State 검증 및 토큰 자동 저장)
 try {
-  const tokens = await client.exchangeCode("authorization-code-from-callback");
+  // 콜백 URL에서 파라미터 추출
+  const urlParams = new URLSearchParams(window.location.search);
+  const receivedState = urlParams.get("state");
+  const receivedCode = urlParams.get("code");
+
+  // State 검증 (CSRF 방지)
+  if (receivedState !== state) {
+    throw new Error("State mismatch - possible CSRF attack");
+  }
+
+  const tokens = await client.exchangeCode(receivedCode, pkce.codeVerifier);
   console.log("Tokens:", tokens);
 } catch (error) {
-  console.error("Token exchange failed:", error.message);
+  console.error("Authentication failed:", error.message);
 }
 
 // 3. 저장된 토큰으로 사용자 정보 조회 (자동 리프래시)
@@ -79,14 +90,15 @@ console.log("Token is valid:", isValid);
 client.logout();
 ```
 
-### PKCE 사용 예제
+### PKCE 및 State 사용 예제
 
 ```javascript
-// PKCE 챌린지 생성
+// 보안 강화를 위한 PKCE 및 State 생성
 const pkce = await FlowAuthClient.generatePKCE();
+const state = await FlowAuthClient.generateState();
 
-// 인증 URL에 PKCE 포함
-const authUrl = client.createAuthorizeUrl(["read:user"], "state", pkce.codeChallenge);
+// 인증 URL에 PKCE와 State 포함
+const authUrl = client.createAuthorizeUrl(["read:user"], state, pkce.codeChallenge);
 
 // 콜백에서 코드 교환 시 codeVerifier 전달
 const tokens = await client.exchangeCode("authorization-code", pkce.codeVerifier);
@@ -175,6 +187,7 @@ new FlowAuthClient(config: OAuth2ClientConfig)
 #### 정적 메소드
 
 - `FlowAuthClient.generatePKCE()`: PKCE 챌린지 생성
+- `FlowAuthClient.generateState()`: OAuth2 State 파라미터 생성
 
 ### 에러 처리
 
