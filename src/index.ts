@@ -33,24 +33,8 @@ interface PKCECodes {
  * FlowAuth에서 지원하는 권한 스코프들을 정의합니다.
  */
 export enum OAuth2Scope {
-  /** 사용자 기본 정보 읽기 */
-  READ_USER = "read:user",
-  /** 사용자 프로필 읽기 */
-  READ_PROFILE = "read:profile",
-  /** 파일 업로드 */
-  UPLOAD_FILE = "upload:file",
-  /** 파일 읽기 */
-  READ_FILE = "read:file",
-  /** 파일 삭제 */
-  DELETE_FILE = "delete:file",
-  /** 클라이언트 정보 읽기 */
-  READ_CLIENT = "read:client",
-  /** 클라이언트 정보 수정 */
-  WRITE_CLIENT = "write:client",
-  /** 클라이언트 삭제 */
-  DELETE_CLIENT = "delete:client",
-  /** 기본 접근 권한 */
-  BASIC = "basic",
+  /** 계정의 기본 정보 읽기 (사용자 ID, 이름 등) */
+  IDENTIFY = "identify",
   /** 사용자 이메일 주소 읽기 */
   EMAIL = "email",
 }
@@ -59,7 +43,7 @@ export enum OAuth2Scope {
  * 기본 스코프 목록
  * 새로운 클라이언트에 기본적으로 부여되는 스코프들입니다.
  */
-export const DEFAULT_SCOPES: OAuth2Scope[] = [OAuth2Scope.BASIC, OAuth2Scope.READ_USER, OAuth2Scope.READ_PROFILE];
+export const DEFAULT_SCOPES: OAuth2Scope[] = [OAuth2Scope.IDENTIFY];
 
 /**
  * 환경 감지 및 호환성 유틸리티 클래스
@@ -244,7 +228,7 @@ class OAuth2Error extends Error {
  * });
  *
  * // 인증 URL 생성
- * const authUrl = client.createAuthorizeUrl(['read:user']);
+ * const authUrl = client.createAuthorizeUrl([OAuth2Scope.IDENTIFY]);
  *
  * // 토큰 교환
  * const tokens = await client.exchangeCode('auth-code');
@@ -332,7 +316,7 @@ export class FlowAuthClient {
    * // pkce.codeVerifier를 안전하게 저장하여 토큰 교환 시 사용
    * ```
    */
-  createAuthorizeUrl(scopes: OAuth2Scope[] = [OAuth2Scope.READ_USER], state?: string, pkce?: PKCECodes): string {
+  createAuthorizeUrl(scopes: OAuth2Scope[] = [OAuth2Scope.IDENTIFY], state?: string, pkce?: PKCECodes): string {
     const params = new URLSearchParams({
       response_type: "code",
       client_id: this.clientId,
@@ -600,7 +584,7 @@ export class FlowAuthClient {
    * const pkce = await FlowAuthClient.generatePKCE();
    *
    * // 인증 URL 생성 시 PKCE 객체 사용
-   * const authUrl = client.createAuthorizeUrl(['read:user'], 'state', pkce);
+   * const authUrl = client.createAuthorizeUrl([OAuth2Scope.IDENTIFY], 'state', pkce);
    *
    * // 토큰 교환 시 codeVerifier 사용
    * const tokens = await client.exchangeCode('auth-code', pkce.codeVerifier);
@@ -643,7 +627,7 @@ export class FlowAuthClient {
    * const state = await FlowAuthClient.generateState();
    *
    * // 인증 URL 생성 시 state 사용
-   * const authUrl = client.createAuthorizeUrl(['read:user'], state);
+   * const authUrl = client.createAuthorizeUrl([OAuth2Scope.IDENTIFY], state);
    *
    * // 콜백에서 state 검증
    * if (receivedState !== state) {
@@ -677,7 +661,7 @@ export class FlowAuthClient {
    * const authParams = await FlowAuthClient.generateSecureAuthParams();
    *
    * // 인증 URL 생성
-   * const authUrl = client.createAuthorizeUrl(['read:user'], authParams.state, authParams.pkce);
+   * const authUrl = client.createAuthorizeUrl([OAuth2Scope.IDENTIFY], authParams.state, authParams.pkce);
    *
    * // 콜백에서 검증 및 토큰 교환
    * const tokens = await client.exchangeCode('auth-code', authParams.pkce.codeVerifier);
@@ -717,7 +701,7 @@ export class FlowAuthClient {
    * const tokens = await client.exchangeCode('auth-code', codeVerifier);
    * ```
    */
-  async createSecureAuthorizeUrl(scopes: OAuth2Scope[] = [OAuth2Scope.READ_USER]): Promise<{ authUrl: string; codeVerifier: string; state: string }> {
+  async createSecureAuthorizeUrl(scopes: OAuth2Scope[] = [OAuth2Scope.IDENTIFY]): Promise<{ authUrl: string; codeVerifier: string; state: string }> {
     const authParams = await FlowAuthClient.generateSecureAuthParams();
 
     const authUrl = this.createAuthorizeUrl(scopes, authParams.state, authParams.pkce);

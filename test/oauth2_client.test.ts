@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { FlowAuthClient } from "../src";
+import { FlowAuthClient, OAuth2Scope } from "../src";
 
 describe("FlowAuthClient", () => {
   const client = new FlowAuthClient({
@@ -10,11 +10,11 @@ describe("FlowAuthClient", () => {
   });
 
   it("should create authorize URL", () => {
-    const url = client.createAuthorizeUrl(["read:user"], "state123");
+    const url = client.createAuthorizeUrl([OAuth2Scope.IDENTIFY], "state123");
     expect(url).toContain("response_type=code");
     expect(url).toContain("client_id=client-id");
     expect(url).toContain("redirect_uri=https%3A%2F%2Fexample.com%2Fcallback");
-    expect(url).toContain("scope=read%3Auser");
+    expect(url).toContain("scope=identify");
     expect(url).toContain("state=state123");
   });
 
@@ -44,11 +44,11 @@ describe("FlowAuthClient", () => {
 
   it("should create authorize URL with PKCE", async () => {
     const pkce = await FlowAuthClient.generatePKCE();
-    const url = client.createAuthorizeUrl(["read:user"], "state123", pkce);
+    const url = client.createAuthorizeUrl([OAuth2Scope.IDENTIFY], "state123", pkce);
     expect(url).toContain("response_type=code");
     expect(url).toContain("client_id=client-id");
     expect(url).toContain("redirect_uri=https%3A%2F%2Fexample.com%2Fcallback");
-    expect(url).toContain("scope=read%3Auser");
+    expect(url).toContain("scope=identify");
     expect(url).toContain("state=state123");
     expect(url).toContain("code_challenge=");
     expect(url).toContain("code_challenge_method=S256");
@@ -56,7 +56,7 @@ describe("FlowAuthClient", () => {
   });
 
   it("should create secure authorize URL", async () => {
-    const result = await client.createSecureAuthorizeUrl(["read:user"]);
+    const result = await client.createSecureAuthorizeUrl([OAuth2Scope.IDENTIFY]);
     expect(result).toHaveProperty("authUrl");
     expect(result).toHaveProperty("codeVerifier");
     expect(result).toHaveProperty("state");
