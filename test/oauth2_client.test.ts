@@ -196,13 +196,28 @@ describe("FlowAuthClient", () => {
   });
 
   it("should handle hybrid callback with implicit tokens", async () => {
-    const callbackUrl = "https://example.com/callback#access_token=implicit123&id_token=idtoken456&token_type=Bearer&expires_in=3600&state=teststate";
-    const result = await client.handleHybridCallback(callbackUrl, "teststate");
+    // Mock validateIdToken to avoid network calls
+    const validateIdTokenSpy = vi.spyOn(client, "validateIdToken").mockResolvedValue({
+      iss: "https://example.com",
+      aud: "client-id",
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      iat: Math.floor(Date.now() / 1000),
+      sub: "user123",
+      nonce: undefined,
+    });
 
-    expect(result).toHaveProperty("access_token", "implicit123");
-    expect(result).toHaveProperty("id_token", "idtoken456");
-    expect(result).toHaveProperty("token_type", "Bearer");
-    expect(result).toHaveProperty("expires_in", 3600);
+    try {
+      const callbackUrl =
+        "https://example.com/callback#access_token=implicit123&id_token=idtoken456&token_type=Bearer&expires_in=3600&state=teststate";
+      const result = await client.handleHybridCallback(callbackUrl, "teststate");
+
+      expect(result).toHaveProperty("access_token", "implicit123");
+      expect(result).toHaveProperty("id_token", "idtoken456");
+      expect(result).toHaveProperty("token_type", "Bearer");
+      expect(result).toHaveProperty("expires_in", 3600);
+    } finally {
+      validateIdTokenSpy.mockRestore();
+    }
   });
 
   it("should reject hybrid callback with invalid state", async () => {
