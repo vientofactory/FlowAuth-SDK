@@ -112,6 +112,75 @@ const { authUrl, codeVerifier, state } = await client.createSecureAuthorizeUrl([
 const tokens = await client.exchangeCode("authorization-code", codeVerifier);
 ```
 
+### OIDC Hybrid Flow 사용 예제
+
+Hybrid Flow는 Authorization Code와 ID Token을 동시에 받아서 보안성과 사용자 경험을 모두 향상시킵니다:
+
+```javascript
+const { FlowAuthClient, OAuth2Scope } = require("flowauth-oauth2-client");
+
+const client = new FlowAuthClient({
+  server: "https://your-flowauth-server.com",
+  clientId: "your-client-id",
+  clientSecret: "your-client-secret",
+  redirectUri: "https://your-app.com/callback",
+});
+
+// 방법 1: 수동 Hybrid Flow 구현
+const pkce = await FlowAuthClient.generatePKCE();
+const state = await FlowAuthClient.generateState();
+const nonce = await FlowAuthClient.generateNonce();
+
+const authUrl = client.createAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE, OAuth2Scope.EMAIL], state, pkce, nonce);
+
+// 세션에 파라미터 저장
+sessionStorage.setItem("oauth_code_verifier", pkce.codeVerifier);
+sessionStorage.setItem("oauth_state", state);
+sessionStorage.setItem("oauth_nonce", nonce);
+
+// 사용자를 authUrl로 리다이렉트
+window.location.href = authUrl;
+
+// 콜백에서 Hybrid Flow 처리
+const callbackUrl = window.location.href;
+const expectedState = sessionStorage.getItem("oauth_state");
+const expectedNonce = sessionStorage.getItem("oauth_nonce");
+const codeVerifier = sessionStorage.getItem("oauth_code_verifier");
+
+try {
+  const tokens = await client.handleHybridCallback(callbackUrl, expectedState, expectedNonce, codeVerifier);
+
+  console.log("Access Token:", tokens.access_token);
+  console.log("ID Token:", tokens.id_token);
+  console.log("Refresh Token:", tokens.refresh_token);
+} catch (error) {
+  console.error("Hybrid callback failed:", error.message);
+}
+
+// 방법 2: 자동화된 Hybrid Flow (가장 간단)
+const { authUrl, codeVerifier, state, nonce } = await client.createSecureOIDCAuthorizeUrl([
+  OAuth2Scope.OPENID,
+  OAuth2Scope.PROFILE,
+  OAuth2Scope.EMAIL,
+]);
+
+// 세션에 파라미터 저장
+sessionStorage.setItem("oauth_code_verifier", codeVerifier);
+sessionStorage.setItem("oauth_state", state);
+sessionStorage.setItem("oauth_nonce", nonce);
+
+// 사용자를 authUrl로 리다이렉트
+window.location.href = authUrl;
+
+// 콜백에서 동일한 처리
+const tokens = await client.handleHybridCallback(
+  window.location.href,
+  sessionStorage.getItem("oauth_state"),
+  sessionStorage.getItem("oauth_nonce"),
+  sessionStorage.getItem("oauth_code_verifier")
+);
+```
+
 ### 스코프 활용 예제
 
 SDK는 TypeScript enum을 통해 타입 안전한 스코프 관리를 제공합니다:

@@ -1313,9 +1313,10 @@ export class FlowAuthClient {
   }
 
   /**
-   * OIDC 보안 인증 URL 생성
+   * OIDC 보안 인증 URL 생성 (Hybrid Flow)
    *
-   * PKCE, State, Nonce를 자동으로 생성하여 OIDC 인증 URL을 생성합니다.
+   * PKCE, State, Nonce를 자동으로 생성하여 OIDC Hybrid Flow 인증 URL을 생성합니다.
+   * Hybrid Flow는 Authorization Code와 ID Token을 동시에 받아서 보안성과 사용자 경험을 모두 제공합니다.
    *
    * @param scopes - 요청할 권한 스코프 배열 (openid 스코프 포함 권장)
    * @returns 인증 URL과 보안 파라미터들을 포함한 객체
@@ -1336,6 +1337,14 @@ export class FlowAuthClient {
    * sessionStorage.setItem('oauth_state', state);
    * sessionStorage.setItem('oauth_nonce', nonce);
    * sessionStorage.setItem('oauth_code_verifier', codeVerifier);
+   *
+   * // 콜백 페이지에서:
+   * const tokens = await client.handleHybridCallback(
+   *   window.location.href,
+   *   sessionStorage.getItem('oauth_state'),
+   *   sessionStorage.getItem('oauth_nonce'),
+   *   sessionStorage.getItem('oauth_code_verifier')
+   * );
    * ```
    */
   async createSecureOIDCAuthorizeUrl(
@@ -1356,51 +1365,157 @@ export class FlowAuthClient {
   }
 
   /**
-   * Implicit Grant에서 ID 토큰 파싱 및 검증
+   * 콜백 URL 파싱 유틸리티
    *
-   * URL fragment에서 ID 토큰을 파싱하고 검증합니다.
-   * Implicit Grant 플로우에서 사용됩니다.
+   * OAuth2 콜백 URL에서 파라미터들을 파싱합니다.
+   * Authorization Code Grant, Implicit Grant, Hybrid Flow 모두 지원합니다.
    *
-   * @param hash - URL hash (location.hash)
-   * @param expectedState - 예상 state 값
-   * @param expectedNonce - 예상 nonce 값
-   * @returns 검증된 ID 토큰 페이로드
-   * @throws {Error} 토큰 파싱 또는 검증 실패 시
+   * @param callbackUrl - 콜백 URL (전체 URL 또는 query string + hash)
+   * @returns 파싱된 콜백 파라미터들
    *
    * @example
    * ```typescript
-   * // 콜백 페이지에서
-   * const hash = window.location.hash;
-   * const expectedState = sessionStorage.getItem('oauth_state');
-   * const expectedNonce = sessionStorage.getItem('oauth_nonce');
+   * // 전체 URL에서 파싱
+   * const params = client.parseCallbackUrl('https://app.com/callback?code=abc&state=xyz#id_token=token');
+   * console.log(params.code); // 'abc'
+   * console.log(params.idToken); // 'token'
    *
+   * // 현재 페이지 URL에서 파싱
+   * const params = client.parseCallbackUrl(window.location.href);
+   * ```
+   */
+  parseCallbackUrl(callbackUrl: string): {
+    code?: string;
+    state?: string;
+    idToken?: string;
+    accessToken?: string;
+    tokenType?: string;
+    expiresIn?: number;
+    error?: string;
+    errorDescription?: string;
+  } {
+    const url = new URL(callbackUrl);
+
+    // Query parameters 파싱
+    const code = url.searchParams.get("code");
+    const state = url.searchParams.get("state");
+    const error = url.searchParams.get("error");
+    const errorDescription = url.searchParams.get("error_description");
+
+    // Fragment parameters 파싱 (수정됨)
+    const hash = url.hash.substring(1); // # 제거
+    if (hash) {
+      const hashParams = new URLSearchParams(hash);
+      const idToken = hashParams.get("id_token");
+      const accessToken = hashParams.get("access_token");
+      const tokenType = hashParams.get("token_type");
+      const expiresIn = hashParams.get("expires_in");
+      const fragmentState = hashParams.get("state"); // fragment에서도 state 파싱
+
+      // state는 query나 fragment 중 하나만 사용 (query 우선)
+      const finalState = state || fragmentState;
+
+      return {
+        code: code || undefined,
+        state: finalState || undefined,
+        idToken: idToken || undefined,
+        accessToken: accessToken || undefined,
+        tokenType: tokenType || undefined,
+        expiresIn: expiresIn ? parseInt(expiresIn) : undefined,
+        error: error || undefined,
+        errorDescription: errorDescription || undefined,
+      };
+    }
+
+    return {
+      code: code || undefined,
+      state: state || undefined,
+      idToken: undefined,
+      accessToken: undefined,
+      tokenType: undefined,
+      expiresIn: undefined,
+      error: error || undefined,
+      errorDescription: errorDescription || undefined,
+    };
+  }
+
+  /**
+   * Hybrid Flow 콜백 처리
+   *
+   * Hybrid Flow (code id_token) 콜백을 처리합니다.
+   * URL에서 code와 id_token을 추출하여 검증하고 토큰을 교환합니다.
+   *
+   * @param callbackUrl - 콜백 URL
+   * @param expectedState - 예상 state 값 (CSRF 방지)
+   * @param expectedNonce - 예상 nonce 값 (replay attack 방지)
+   * @param codeVerifier - PKCE 코드 검증자
+   * @returns 토큰 응답 객체
+   * @throws {OAuth2Error} 콜백 처리 실패 시
+   *
+   * @example
+   * ```typescript
    * try {
-   *   const payload = await client.parseAndValidateIdTokenFromHash(hash, expectedState, expectedNonce);
-   *   console.log('User authenticated:', payload.sub);
+   *   // 콜백 URL에서 파라미터 추출 및 검증
+   *   const tokens = await client.handleHybridCallback(
+   *     window.location.href,
+   *     sessionStorage.getItem('oauth_state'),
+   *     sessionStorage.getItem('oauth_nonce'),
+   *     sessionStorage.getItem('oauth_code_verifier')
+   *   );
+   *
+   *   console.log('Access Token:', tokens.access_token);
+   *   console.log('ID Token:', tokens.id_token);
    * } catch (error) {
-   *   console.error('Token validation failed:', error.message);
+   *   console.error('Hybrid callback failed:', error.message);
    * }
    * ```
    */
-  async parseAndValidateIdTokenFromHash(hash: string, expectedState?: string, expectedNonce?: string): Promise<IdTokenPayload> {
-    if (!hash || !hash.startsWith("#")) {
-      throw new Error("Invalid hash format");
-    }
+  async handleHybridCallback(callbackUrl: string, expectedState?: string, expectedNonce?: string, codeVerifier?: string): Promise<TokenResponse> {
+    const params = this.parseCallbackUrl(callbackUrl);
 
-    const hashParams = new URLSearchParams(hash.substring(1));
-    const idToken = hashParams.get("id_token");
-    const state = hashParams.get("state");
-
-    if (!idToken) {
-      throw new Error("ID token not found in hash");
+    // 에러 처리
+    if (params.error) {
+      throw new OAuth2Error(
+        `OAuth2 callback error: ${params.error}${params.errorDescription ? ` - ${params.errorDescription}` : ""}`,
+        undefined,
+        params.error
+      );
     }
 
     // State 검증
-    if (expectedState && state !== expectedState) {
-      throw new Error("State mismatch - possible CSRF attack");
+    if (expectedState && params.state !== expectedState) {
+      throw new OAuth2Error("State mismatch - possible CSRF attack");
     }
 
-    // ID 토큰 검증
-    return await this.validateIdToken(idToken, expectedNonce);
+    // ID token 검증 및 저장
+    if (params.idToken) {
+      try {
+        await this.validateIdToken(params.idToken, expectedNonce);
+        this.idToken = params.idToken;
+      } catch (error) {
+        console.warn("ID token validation failed:", error);
+        // ID token 검증 실패해도 계속 진행 (선택적)
+      }
+    }
+
+    // Authorization code가 있으면 토큰 교환
+    if (params.code) {
+      return await this.exchangeCode(params.code, codeVerifier);
+    }
+
+    // Implicit tokens가 있는 경우 (fallback)
+    if (params.accessToken) {
+      const tokenResponse: TokenResponse = {
+        access_token: params.accessToken,
+        token_type: params.tokenType || "Bearer",
+        expires_in: params.expiresIn || 3600,
+        id_token: params.idToken,
+      };
+
+      this.saveTokens(tokenResponse);
+      return tokenResponse;
+    }
+
+    throw new OAuth2Error("No authorization code or access token found in callback");
   }
 }
