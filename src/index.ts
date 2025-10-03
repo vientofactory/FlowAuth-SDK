@@ -33,17 +33,21 @@ interface PKCECodes {
  * FlowAuth에서 지원하는 권한 스코프들을 정의합니다.
  */
 export enum OAuth2Scope {
-  /** 계정의 기본 정보 읽기 (사용자 ID, 이름 등) */
-  IDENTIFY = "identify",
+  /** OpenID Connect 인증을 위한 기본 스코프 */
+  OPENID = "openid",
+  /** 사용자 프로필 정보 (이름, 생년월일, 지역, 사진 등) 접근 */
+  PROFILE = "profile",
   /** 사용자 이메일 주소 읽기 */
   EMAIL = "email",
+  /** 계정의 기본 정보 읽기 (사용자 ID, 이름 등) - 레거시 */
+  IDENTIFY = "identify",
 }
 
 /**
  * 기본 스코프 목록
  * 새로운 클라이언트에 기본적으로 부여되는 스코프들입니다.
  */
-export const DEFAULT_SCOPES: OAuth2Scope[] = [OAuth2Scope.IDENTIFY];
+export const DEFAULT_SCOPES: OAuth2Scope[] = [OAuth2Scope.OPENID, OAuth2Scope.PROFILE];
 
 /**
  * 환경 감지 및 호환성 유틸리티 클래스
@@ -228,7 +232,7 @@ class OAuth2Error extends Error {
  * });
  *
  * // 인증 URL 생성
- * const authUrl = client.createAuthorizeUrl([OAuth2Scope.IDENTIFY]);
+ * const authUrl = client.createAuthorizeUrl([OAuth2Scope.PROFILE]);
  *
  * // 토큰 교환
  * const tokens = await client.exchangeCode('auth-code');
@@ -299,7 +303,7 @@ export class FlowAuthClient {
    * 사용자를 FlowAuth 인증 페이지로 리다이렉트하기 위한 URL을 생성합니다.
    * 생성된 URL로 사용자를 이동시키면 OAuth2 인증 플로우가 시작됩니다.
    *
-   * @param scopes - 요청할 권한 스코프 배열 (기본값: [OAuth2Scope.READ_USER])
+   * @param scopes - 요청할 권한 스코프 배열 (기본값: [OAuth2Scope.PROFILE])
    * @param state - CSRF 방지를 위한 상태값 (권장)
    * @param pkce - PKCE 코드 챌린지 (보안 강화용, 권장)
    * @returns 완성된 인증 URL
@@ -307,16 +311,16 @@ export class FlowAuthClient {
    * @example
    * ```typescript
    * // 기본 사용
-   * const authUrl = client.createAuthorizeUrl([OAuth2Scope.READ_USER, OAuth2Scope.EMAIL], 'random-state-123');
+   * const authUrl = client.createAuthorizeUrl([OAuth2Scope.PROFILE, OAuth2Scope.EMAIL], 'random-state-123');
    * window.location.href = authUrl;
    *
    * // PKCE와 함께 사용
    * const pkce = await FlowAuthClient.generatePKCE();
-   * const authUrl = client.createAuthorizeUrl([OAuth2Scope.READ_USER], 'state', pkce);
+   * const authUrl = client.createAuthorizeUrl([OAuth2Scope.PROFILE], 'state', pkce);
    * // pkce.codeVerifier를 안전하게 저장하여 토큰 교환 시 사용
    * ```
    */
-  createAuthorizeUrl(scopes: OAuth2Scope[] = [OAuth2Scope.IDENTIFY], state?: string, pkce?: PKCECodes): string {
+  createAuthorizeUrl(scopes: OAuth2Scope[] = [OAuth2Scope.PROFILE], state?: string, pkce?: PKCECodes): string {
     const params = new URLSearchParams({
       response_type: "code",
       client_id: this.clientId,
@@ -627,7 +631,7 @@ export class FlowAuthClient {
    * const state = await FlowAuthClient.generateState();
    *
    * // 인증 URL 생성 시 state 사용
-   * const authUrl = client.createAuthorizeUrl([OAuth2Scope.IDENTIFY], state);
+   * const authUrl = client.createAuthorizeUrl([OAuth2Scope.PROFILE], state);
    *
    * // 콜백에서 state 검증
    * if (receivedState !== state) {
@@ -686,13 +690,13 @@ export class FlowAuthClient {
    * PKCE와 State를 자동으로 생성하여 보안이 강화된 인증 URL을 생성합니다.
    * 이 메소드를 사용하면 별도로 PKCE 코드를 관리할 필요가 없습니다.
    *
-   * @param scopes - 요청할 권한 스코프 배열 (기본값: [OAuth2Scope.READ_USER])
+   * @param scopes - 요청할 권한 스코프 배열 (기본값: [OAuth2Scope.PROFILE])
    * @returns 인증 URL과 PKCE 코드 검증자를 포함한 객체
    * @throws {Error} Crypto API를 사용할 수 없는 환경에서 발생
    *
    * @example
    * ```typescript
-   * const { authUrl, codeVerifier, state } = await client.createSecureAuthorizeUrl([OAuth2Scope.READ_USER, OAuth2Scope.EMAIL]);
+   * const { authUrl, codeVerifier, state } = await client.createSecureAuthorizeUrl([OAuth2Scope.PROFILE, OAuth2Scope.EMAIL]);
    *
    * // 사용자를 인증 페이지로 리다이렉트
    * window.location.href = authUrl;
@@ -701,7 +705,7 @@ export class FlowAuthClient {
    * const tokens = await client.exchangeCode('auth-code', codeVerifier);
    * ```
    */
-  async createSecureAuthorizeUrl(scopes: OAuth2Scope[] = [OAuth2Scope.IDENTIFY]): Promise<{ authUrl: string; codeVerifier: string; state: string }> {
+  async createSecureAuthorizeUrl(scopes: OAuth2Scope[] = [OAuth2Scope.PROFILE]): Promise<{ authUrl: string; codeVerifier: string; state: string }> {
     const authParams = await FlowAuthClient.generateSecureAuthParams();
 
     const authUrl = this.createAuthorizeUrl(scopes, authParams.state, authParams.pkce);
