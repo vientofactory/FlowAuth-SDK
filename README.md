@@ -1,14 +1,15 @@
-# FlowAuth OAuth2 SDK
+# FlowAuth OAuth2/OIDC SDK
 
-FlowAuth와의 OAuth2 통합을 위한 간단한 TypeScript/JavaScript SDK입니다.
+FlowAuth와의 OAuth2 및 OpenID Connect 통합을 위한 간단한 TypeScript/JavaScript SDK입니다.
 
 ## 특징
 
 - OAuth2 Authorization Code Grant 플로우 지원
+- **OpenID Connect 1.0 완전 지원** (ID 토큰, UserInfo 엔드포인트)
 - PKCE (Proof Key for Code Exchange) 지원
 - 자동 토큰 리프래시
 - 토큰 저장 및 관리 (브라우저 sessionStorage/localStorage)
-- **TypeScript 스코프 enum 제공** (타입 안전한 권한 관리)
+- **TypeScript OIDC 스코프 enum 제공** (타입 안전한 권한 관리)
 - 브라우저 및 Node.js 환경 지원
 - 강화된 에러 처리 (OAuth2Error 클래스)
 
@@ -56,7 +57,7 @@ const client = new FlowAuthClient({
 
 // 1. State 생성 및 인증 URL 생성
 const state = await FlowAuthClient.generateState();
-const authUrl = client.createAuthorizeUrl([OAuth2Scope.IDENTIFY, OAuth2Scope.EMAIL], state);
+const authUrl = client.createAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE, OAuth2Scope.EMAIL], state);
 console.log("인증 URL:", authUrl);
 // 사용자를 authUrl로 리다이렉트
 
@@ -96,16 +97,16 @@ client.logout();
 // 방법 1: 개별 생성 및 수동 관리
 const pkce = await FlowAuthClient.generatePKCE();
 const state = await FlowAuthClient.generateState();
-const authUrl = client.createAuthorizeUrl([OAuth2Scope.IDENTIFY], state, pkce);
+const authUrl = client.createAuthorizeUrl([OAuth2Scope.OPENID], state, pkce);
 const tokens = await client.exchangeCode("authorization-code", pkce.codeVerifier);
 
 // 방법 2: PKCE와 State를 함께 생성 (편의 메소드)
 const authParams = await FlowAuthClient.generateSecureAuthParams();
-const authUrl = client.createAuthorizeUrl([OAuth2Scope.IDENTIFY], authParams.state, authParams.pkce);
+const authUrl = client.createAuthorizeUrl([OAuth2Scope.OPENID], authParams.state, authParams.pkce);
 const tokens = await client.exchangeCode("authorization-code", authParams.pkce.codeVerifier);
 
 // 방법 3: 완전 자동화된 보안 인증 URL 생성 (가장 간단)
-const { authUrl, codeVerifier, state } = await client.createSecureAuthorizeUrl([OAuth2Scope.IDENTIFY, OAuth2Scope.EMAIL]);
+const { authUrl, codeVerifier, state } = await client.createSecureAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE, OAuth2Scope.EMAIL]);
 // authUrl로 사용자를 리다이렉트하고, codeVerifier와 state를 세션에 저장
 // 콜백에서:
 const tokens = await client.exchangeCode("authorization-code", codeVerifier);
@@ -130,7 +131,7 @@ const authUrl = client.createAuthorizeUrl(DEFAULT_SCOPES);
 console.log("기본 권한으로 인증:", authUrl);
 
 // 2. 이메일 권한 추가 요청
-const emailAuthUrl = client.createAuthorizeUrl([OAuth2Scope.IDENTIFY, OAuth2Scope.EMAIL]);
+const emailAuthUrl = client.createAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE, OAuth2Scope.EMAIL]);
 console.log("이메일 정보 접근 인증:", emailAuthUrl);
 ```
 
@@ -153,7 +154,7 @@ class UserProfileApp {
 
   // 로그인 시작
   async startLogin() {
-    const { authUrl, codeVerifier, state } = await this.client.createSecureAuthorizeUrl([OAuth2Scope.IDENTIFY, OAuth2Scope.EMAIL]);
+    const { authUrl, codeVerifier, state } = await this.client.createSecureAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE, OAuth2Scope.EMAIL]);
 
     // 세션에 PKCE 정보 저장
     sessionStorage.setItem("oauth_code_verifier", codeVerifier);
@@ -235,7 +236,7 @@ class PermissionBasedUI {
     }
 
     // 기본 사용자 정보 UI
-    if (scopes.includes(OAuth2Scope.IDENTIFY)) {
+    if (scopes.includes(OAuth2Scope.PROFILE)) {
       this.renderUserProfile();
     }
   }
@@ -261,7 +262,7 @@ class PermissionBasedUI {
     console.log("- 이메일 주소 접근 권한");
 
     // 추가 권한으로 재인증 링크 생성
-    const authUrl = this.client.createAuthorizeUrl(additionalScopes);
+    const authUrl = this.client.createAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE, OAuth2Scope.EMAIL]);
     console.log("추가 권한 요청 URL:", authUrl);
   }
 }
@@ -326,21 +327,23 @@ npm test
 
 ## API 문서
 
-### OAuth2 스코프
+### OAuth2/OIDC 스코프
 
-SDK는 다음과 같은 OAuth2 스코프들을 enum으로 제공합니다:
+SDK는 다음과 같은 OAuth2 및 OpenID Connect 스코프들을 enum으로 제공합니다:
 
 ```typescript
 enum OAuth2Scope {
-  IDENTIFY = "identify", // 계정의 기본 정보 읽기 (사용자 ID, 이름 등)
+  OPENID = "openid", // OpenID Connect 인증을 위한 기본 스코프
+  PROFILE = "profile", // 사용자 프로필 정보 (이름, 생년월일, 지역, 사진 등) 접근
   EMAIL = "email", // 사용자 이메일 주소 읽기
+  IDENTIFY = "identify", // 계정의 기본 정보 읽기 (사용자 ID, 이름 등) - 레거시
 }
 ```
 
-**기본 스코프:**
+**기본 스코프 (OIDC 권장):**
 
 ```typescript
-const DEFAULT_SCOPES = [OAuth2Scope.IDENTIFY];
+const DEFAULT_SCOPES = [OAuth2Scope.OPENID, OAuth2Scope.PROFILE];
 ```
 
 ### FlowAuthClient 클래스
@@ -362,8 +365,8 @@ new FlowAuthClient(config: OAuth2ClientConfig)
 
 #### 메소드
 
-- `createAuthorizeUrl(scopes: OAuth2Scope[] = [OAuth2Scope.IDENTIFY], state?, pkce?)`: 인증 URL 생성 (PKCE 지원)
-- `createSecureAuthorizeUrl(scopes: OAuth2Scope[] = [OAuth2Scope.IDENTIFY])`: PKCE와 State를 자동 생성하여 보안 인증 URL 생성
+- `createAuthorizeUrl(scopes: OAuth2Scope[] = [OAuth2Scope.OPENID], state?, pkce?)`: 인증 URL 생성 (PKCE 지원)
+- `createSecureAuthorizeUrl(scopes: OAuth2Scope[] = [OAuth2Scope.OPENID, OAuth2Scope.PROFILE])`: PKCE와 State를 자동 생성하여 보안 인증 URL 생성
 - `exchangeCode(code, codeVerifier?)`: Authorization Code를 토큰으로 교환
 - `getUserInfo(accessToken?)`: 사용자 정보 조회 (저장된 토큰 자동 사용)
 - `refreshToken(refreshToken?)`: 토큰 리프래시 (저장된 토큰 자동 사용)
@@ -392,7 +395,7 @@ try {
 }
 ```
 
-자세한 API 문서와 OAuth2 플로우 설명은 [OAUTH2_GUIDE.md](../OAUTH2_GUIDE.md)를 참조하세요.
+자세한 API 문서와 OAuth2/OIDC 플로우 설명은 [OAUTH2_GUIDE.md](../OAUTH2_GUIDE.md)를 참조하세요.
 
 ## 라이선스
 
