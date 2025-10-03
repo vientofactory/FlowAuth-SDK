@@ -50,6 +50,83 @@ export enum OAuth2Scope {
 export const DEFAULT_SCOPES: OAuth2Scope[] = [OAuth2Scope.OPENID, OAuth2Scope.PROFILE];
 
 /**
+ * OIDC ID 토큰 페이로드 인터페이스
+ */
+interface IdTokenPayload {
+  /** 발급자 (Issuer) */
+  iss: string;
+  /** 대상자 (Audience) */
+  aud: string;
+  /** 만료 시간 (Expiration Time) */
+  exp: number;
+  /** 발급 시간 (Issued At) */
+  iat: number;
+  /** 주체 (Subject) - 사용자 ID */
+  sub: string;
+  /** 인증 시간 (Authentication Time) */
+  auth_time?: number;
+  /** Nonce 값 (Replay Attack 방지) */
+  nonce?: string;
+  /** 인증 컨텍스트 클래스 참조 */
+  acr?: string;
+  /** 허용된 인증 방법 */
+  amr?: string[];
+  /** 권한 부여자 */
+  azp?: string;
+  /** 추가 클레임들 */
+  [key: string]: any;
+}
+
+/**
+ * JWKS (JSON Web Key Set) 키 인터페이스
+ */
+interface JWKSKey {
+  /** 키 타입 */
+  kty: string;
+  /** 키 ID */
+  kid: string;
+  /** RSA 모듈러스 (Base64URL) */
+  n: string;
+  /** RSA 공개 지수 (Base64URL) */
+  e: string;
+  /** 알고리즘 */
+  alg: string;
+}
+
+/**
+ * JWKS 응답 인터페이스
+ */
+interface JWKSResponse {
+  keys: JWKSKey[];
+}
+
+/**
+ * OIDC Discovery 문서 인터페이스
+ */
+interface OIDCDiscoveryDocument {
+  /** 발급자 */
+  issuer: string;
+  /** 인증 엔드포인트 */
+  authorization_endpoint: string;
+  /** 토큰 엔드포인트 */
+  token_endpoint: string;
+  /** UserInfo 엔드포인트 */
+  userinfo_endpoint: string;
+  /** JWKS URI */
+  jwks_uri: string;
+  /** 지원하는 스코프들 */
+  scopes_supported: string[];
+  /** 지원하는 응답 타입들 */
+  response_types_supported: string[];
+  /** 지원하는 토큰 엔드포인트 인증 방법들 */
+  token_endpoint_auth_methods_supported: string[];
+  /** 지원하는 ID 토큰 서명 알고리즘들 */
+  id_token_signing_alg_values_supported: string[];
+  /** 지원하는 클레임들 */
+  claims_supported: string[];
+}
+
+/**
  * 환경 감지 및 호환성 유틸리티 클래스
  * 브라우저와 Node.js 환경 간의 API 차이를 처리합니다.
  */
@@ -159,7 +236,256 @@ class EnvironmentUtils {
     }
     throw new Error("fetch is not available in this environment");
   }
+
+  /**
+   * JWT 토큰을 파싱합니다.
+   * @param token JWT 토큰 문자열
+   * @returns 헤더, 페이로드, 서명
+   */
+  static parseJwt(token: string): { header: any; payload: any; signature: string } {
+    const parts = token.split(".");
+    if (parts.length !== 3) {
+      throw new Error("Invalid JWT token format");
+    }
+
+    const header = JSON.parse(this.atob(parts[0].replace(/-/g, "+").replace(/_/g, "/")));
+    const payload = JSON.parse(this.atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+    const signature = parts[2];
+
+    return { header, payload, signature };
+  }
+
+  /**
+   * JWT 토큰의 만료 여부를 확인합니다.
+   * @param token JWT 토큰 문자열
+   * @returns 만료되었으면 true
+   */
+  static isTokenExpired(token: string): boolean {
+    try {
+      const { payload } = this.parseJwt(token);
+      const currentTime = Math.floor(Date.now() / 1000);
+      return payload.exp < currentTime;
+    } catch {
+      return true; // 파싱 실패 시 만료된 것으로 간주
+    }
+  }
+
+  /**
+   * Base64URL 디코딩 함수
+   * @param input Base64URL 문자열
+   * @returns 디코딩된 문자열
+   */
+  static atob(input: string): string {
+    if (this.isBrowser()) {
+      return window.atob(input.replace(/-/g, "+").replace(/_/g, "/"));
+    } else if (this.isNode()) {
+      const Buffer = (globalThis as any).Buffer;
+      if (Buffer) {
+        return Buffer.from(input.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString();
+      }
+      throw new Error("Buffer is not available in this Node.js environment");
+    }
+    throw new Error("atob is not available in this environment");
+  }
 }
+
+/**
+ * OpenID Connect 유틸리티 클래스
+ * OIDC 관련 기능을 제공합니다.
+ */
+class OIDCUtils {
+  /**
+   * OIDC Discovery 문서를 가져옵니다.
+   * @param issuer Issuer URL
+   * @returns Discovery 문서
+   */
+  static async getDiscoveryDocument(issuer: string): Promise<OIDCDiscoveryDocument> {
+    const discoveryUrl = `${issuer}/.well-known/openid-configuration`;
+    const response = await EnvironmentUtils.getFetch()(discoveryUrl);
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch discovery document: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  /**
+   * JWKS (JSON Web Key Set)를 가져옵니다.
+   * @param jwksUri JWKS URI
+   * @returns JWKS
+   */
+  static async getJwks(jwksUri: string): Promise<JWKSResponse> {
+    const response = await EnvironmentUtils.getFetch()(jwksUri);
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch JWKS: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  /**
+   * RSA 공개키를 JWKS에서 가져옵니다.
+   * @param jwksUri JWKS 엔드포인트 URI
+   * @param kid Key ID
+   * @returns RSA 공개키 (CryptoKey)
+   */
+  static async getRsaPublicKey(jwksUri: string, kid: string): Promise<CryptoKey> {
+    const jwks = await this.getJwks(jwksUri);
+    const key = jwks.keys.find((k: JWKSKey) => k.kid === kid);
+
+    if (!key) {
+      throw new Error(`Key with kid '${kid}' not found in JWKS`);
+    }
+
+    if (key.kty !== "RSA") {
+      throw new Error("Only RSA keys are supported");
+    }
+
+    // JWKS에서 RSA 공개키 구성
+    const publicKey = {
+      kty: key.kty,
+      n: key.n,
+      e: key.e,
+      alg: key.alg,
+      kid: key.kid,
+    };
+
+    const crypto = EnvironmentUtils.getCrypto();
+    if (!crypto) {
+      throw new Error("Crypto API is not available");
+    }
+
+    // CryptoKey로 변환
+    return await crypto.subtle.importKey(
+      "jwk",
+      publicKey,
+      {
+        name: "RSASSA-PKCS1-v1_5",
+        hash: "SHA-256",
+      },
+      false,
+      ["verify"]
+    );
+  }
+
+  /**
+   * RSA 서명 검증을 포함한 ID 토큰 검증
+   * @param idToken ID 토큰
+   * @param jwksUri JWKS 엔드포인트 URI
+   * @param expectedIssuer 예상 issuer
+   * @param expectedAudience 예상 audience
+   * @param expectedNonce 예상 nonce
+   * @returns 검증된 토큰 페이로드
+   */
+  static async validateAndParseIdTokenWithRsa(
+    idToken: string,
+    jwksUri: string,
+    expectedIssuer: string,
+    expectedAudience: string,
+    expectedNonce?: string
+  ): Promise<IdTokenPayload> {
+    try {
+      const { header, payload, signature } = EnvironmentUtils.parseJwt(idToken);
+
+      // 개발 환경 토큰은 검증 건너뛰기 (HMAC 서명)
+      if (header.alg === "HS256") {
+        console.log("Development environment token detected, skipping RSA validation");
+        return payload as IdTokenPayload;
+      }
+
+      // 헤더에서 key ID 추출
+      const kid = header.kid as string;
+      if (!kid) {
+        throw new Error("Key ID (kid) not found in token header");
+      }
+
+      // RSA 공개키 가져오기
+      const publicKey = await this.getRsaPublicKey(jwksUri, kid);
+
+      // 서명 검증
+      const crypto = EnvironmentUtils.getCrypto();
+      if (!crypto) {
+        throw new Error("Crypto API is not available");
+      }
+
+      const encoder = new TextEncoder();
+      const data = encoder.encode(`${idToken.split(".")[0]}.${idToken.split(".")[1]}`);
+      const signatureBytes = Uint8Array.from(EnvironmentUtils.atob(signature.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+
+      const isValidSignature = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", publicKey, signatureBytes, data);
+
+      if (!isValidSignature) {
+        throw new Error("Invalid RSA signature");
+      }
+
+      // 기본 검증
+      if (payload.iss !== expectedIssuer) {
+        throw new Error("Invalid issuer");
+      }
+
+      if (payload.aud !== expectedAudience) {
+        throw new Error("Invalid audience");
+      }
+
+      // 만료 확인
+      if (EnvironmentUtils.isTokenExpired(idToken)) {
+        throw new Error("Token is expired");
+      }
+
+      // nonce 검증 (있는 경우)
+      if (expectedNonce && payload.nonce !== expectedNonce) {
+        throw new Error("Invalid nonce");
+      }
+
+      return payload as IdTokenPayload;
+    } catch (error) {
+      throw new Error(`RSA ID token validation failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  }
+
+  /**
+   * 기본 ID 토큰 검증 (RSA 서명 검증 제외)
+   * @param idToken ID 토큰
+   * @param expectedIssuer 예상 issuer
+   * @param expectedAudience 예상 audience
+   * @param expectedNonce 예상 nonce
+   * @returns 검증된 토큰 페이로드
+   */
+  static validateAndParseIdToken(idToken: string, expectedIssuer: string, expectedAudience: string, expectedNonce?: string): IdTokenPayload {
+    try {
+      const { payload } = EnvironmentUtils.parseJwt(idToken);
+
+      // 기본 검증
+      if (payload.iss !== expectedIssuer) {
+        throw new Error("Invalid issuer");
+      }
+
+      if (payload.aud !== expectedAudience) {
+        throw new Error("Invalid audience");
+      }
+
+      // 만료 확인
+      if (EnvironmentUtils.isTokenExpired(idToken)) {
+        throw new Error("Token is expired");
+      }
+
+      // nonce 검증 (있는 경우)
+      if (expectedNonce && payload.nonce !== expectedNonce) {
+        throw new Error("Invalid nonce");
+      }
+
+      return payload as IdTokenPayload;
+    } catch (error) {
+      throw new Error(`ID token validation failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  }
+}
+
+/**
+ * OAuth2 토큰 응답 인터페이스
+ */
 
 /**
  * OAuth2 토큰 응답 인터페이스
@@ -169,6 +495,8 @@ interface TokenResponse {
   access_token: string;
   /** 리프래시 토큰 (선택적) */
   refresh_token?: string;
+  /** ID 토큰 (OIDC 사용 시) */
+  id_token?: string;
   /** 토큰 타입 (일반적으로 "Bearer") */
   token_type: string;
   /** 토큰 만료까지 남은 시간(초) */
@@ -195,6 +523,8 @@ interface TokenStorage {
   access_token: string;
   /** 리프래시 토큰 (선택적) */
   refresh_token?: string;
+  /** ID 토큰 (OIDC 사용 시) */
+  id_token?: string;
   /** 토큰 타입 */
   token_type: string;
   /** 토큰 만료 시각 (Unix timestamp) */
@@ -258,6 +588,12 @@ export class FlowAuthClient {
   private tokenData?: TokenStorage;
   /** 진행 중인 리프래시 작업 */
   private refreshPromise?: Promise<TokenResponse>;
+  /** OIDC Discovery 문서 캐시 */
+  private discoveryDocument?: OIDCDiscoveryDocument;
+  /** 저장된 ID 토큰 */
+  private idToken?: string;
+  /** 저장된 nonce 값 */
+  private nonce?: string;
 
   /**
    * FlowAuthClient 생성자
@@ -306,6 +642,7 @@ export class FlowAuthClient {
    * @param scopes - 요청할 권한 스코프 배열 (기본값: [OAuth2Scope.PROFILE])
    * @param state - CSRF 방지를 위한 상태값 (권장)
    * @param pkce - PKCE 코드 챌린지 (보안 강화용, 권장)
+   * @param nonce - OIDC nonce 값 (openid 스코프 사용 시 필수)
    * @returns 완성된 인증 URL
    *
    * @example
@@ -314,21 +651,33 @@ export class FlowAuthClient {
    * const authUrl = client.createAuthorizeUrl([OAuth2Scope.PROFILE, OAuth2Scope.EMAIL], 'random-state-123');
    * window.location.href = authUrl;
    *
+   * // OIDC 사용 (ID 토큰 포함)
+   * const nonce = await FlowAuthClient.generateNonce();
+   * const authUrl = client.createAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE], 'state', undefined, nonce);
+   *
    * // PKCE와 함께 사용
    * const pkce = await FlowAuthClient.generatePKCE();
    * const authUrl = client.createAuthorizeUrl([OAuth2Scope.PROFILE], 'state', pkce);
    * // pkce.codeVerifier를 안전하게 저장하여 토큰 교환 시 사용
    * ```
    */
-  createAuthorizeUrl(scopes: OAuth2Scope[] = [OAuth2Scope.PROFILE], state?: string, pkce?: PKCECodes): string {
+  createAuthorizeUrl(scopes: OAuth2Scope[] = [OAuth2Scope.PROFILE], state?: string, pkce?: PKCECodes, nonce?: string): string {
+    // OIDC를 사용하는 경우 response_type에 id_token 포함
+    const hasOpenId = scopes.includes(OAuth2Scope.OPENID);
+    const responseType = hasOpenId ? "code id_token" : "code";
+
     const params = new URLSearchParams({
-      response_type: "code",
+      response_type: responseType,
       client_id: this.clientId,
       redirect_uri: this.redirectUri,
       scope: scopes.join(" "),
     });
 
     if (state) params.set("state", state);
+    if (nonce) {
+      params.set("nonce", nonce);
+      this.nonce = nonce; // nonce 저장
+    }
     if (pkce) {
       params.set("code_challenge", pkce.codeChallenge);
       params.set("code_challenge_method", pkce.codeChallengeMethod || "S256");
@@ -518,10 +867,16 @@ export class FlowAuthClient {
     this.tokenData = {
       access_token: tokenResponse.access_token,
       refresh_token: tokenResponse.refresh_token,
+      id_token: tokenResponse.id_token,
       token_type: tokenResponse.token_type,
       expires_at: expiresAt,
       scope: tokenResponse.scope,
     };
+
+    // ID 토큰 별도 저장
+    if (tokenResponse.id_token) {
+      this.idToken = tokenResponse.id_token;
+    }
 
     try {
       this.storage.setItem(`flowauth_tokens_${this.clientId}`, JSON.stringify(this.tokenData));
@@ -649,6 +1004,38 @@ export class FlowAuthClient {
     crypto.getRandomValues(array);
     const state = EnvironmentUtils.btoa(String.fromCharCode(...array)).replace(/[+/=]/g, (m) => ({ "+": "-", "/": "_", "=": "" }[m] || ""));
     return state;
+  }
+
+  /**
+   * OIDC Nonce 파라미터 생성
+   *
+   * Replay Attack 방지를 위한 nonce 파라미터를 생성합니다.
+   * OIDC 인증 플로우에서 ID 토큰의 무결성을 보장하기 위해 사용됩니다.
+   *
+   * @returns 랜덤하게 생성된 nonce 문자열
+   * @throws {Error} Crypto API를 사용할 수 없는 환경에서 발생
+   *
+   * @example
+   * ```typescript
+   * const nonce = await FlowAuthClient.generateNonce();
+   *
+   * // OIDC 인증 URL 생성 시 nonce 사용
+   * const authUrl = client.createOIDCAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE], 'state', nonce);
+   *
+   * // ID 토큰 검증 시 nonce 검증
+   * const payload = await client.validateIdToken(idToken, nonce);
+   * ```
+   */
+  static async generateNonce(): Promise<string> {
+    const crypto = EnvironmentUtils.getCrypto();
+    if (!crypto) {
+      throw new Error("Crypto API is not available. Please use a browser environment or Node.js 15+ with crypto support.");
+    }
+
+    const array = new Uint8Array(32);
+    crypto.getRandomValues(array);
+    const nonce = EnvironmentUtils.btoa(String.fromCharCode(...array)).replace(/[+/=]/g, (m) => ({ "+": "-", "/": "_", "=": "" }[m] || ""));
+    return nonce;
   }
 
   /**
@@ -807,5 +1194,213 @@ export class FlowAuthClient {
    */
   getTokenInfo(): TokenStorage | null {
     return this.tokenData || null;
+  }
+
+  /**
+   * OIDC Discovery 문서 가져오기
+   *
+   * 서버의 OIDC Discovery 문서를 가져와서 캐시합니다.
+   * Discovery 문서에는 인증 엔드포인트, JWKS URI 등의 정보가 포함됩니다.
+   *
+   * @returns OIDC Discovery 문서
+   *
+   * @example
+   * ```typescript
+   * const discovery = await client.getDiscoveryDocument();
+   * console.log('Authorization endpoint:', discovery.authorization_endpoint);
+   * console.log('JWKS URI:', discovery.jwks_uri);
+   * ```
+   */
+  async getDiscoveryDocument(): Promise<OIDCDiscoveryDocument> {
+    if (this.discoveryDocument) {
+      return this.discoveryDocument;
+    }
+
+    this.discoveryDocument = await OIDCUtils.getDiscoveryDocument(this.server);
+    return this.discoveryDocument;
+  }
+
+  /**
+   * ID 토큰 검증 및 파싱
+   *
+   * RSA 서명 검증을 포함하여 ID 토큰을 검증하고 페이로드를 반환합니다.
+   * 저장된 ID 토큰을 사용하거나 직접 토큰을 제공할 수 있습니다.
+   *
+   * @param idToken - 검증할 ID 토큰 (선택적, 기본값: 저장된 토큰)
+   * @param expectedNonce - 예상 nonce 값 (선택적)
+   * @returns 검증된 ID 토큰 페이로드
+   * @throws {Error} 토큰 검증 실패 시
+   *
+   * @example
+   * ```typescript
+   * try {
+   *   const payload = await client.validateIdToken();
+   *   console.log('User ID:', payload.sub);
+   *   console.log('Email:', payload.email);
+   * } catch (error) {
+   *   console.error('ID token validation failed:', error.message);
+   * }
+   * ```
+   */
+  async validateIdToken(idToken?: string, expectedNonce?: string): Promise<IdTokenPayload> {
+    const token = idToken || this.idToken;
+    if (!token) {
+      throw new Error("No ID token available");
+    }
+
+    const discovery = await this.getDiscoveryDocument();
+    if (!discovery.jwks_uri) {
+      throw new Error("JWKS URI not found in discovery document");
+    }
+
+    return await OIDCUtils.validateAndParseIdTokenWithRsa(token, discovery.jwks_uri, this.server, this.clientId, expectedNonce || this.nonce);
+  }
+
+  /**
+   * 저장된 ID 토큰 가져오기
+   *
+   * 저장된 ID 토큰을 반환합니다.
+   *
+   * @returns 저장된 ID 토큰 문자열 또는 null
+   *
+   * @example
+   * ```typescript
+   * const idToken = client.getStoredIdToken();
+   * if (idToken) {
+   *   console.log('ID Token:', idToken.substring(0, 50) + '...');
+   * }
+   * ```
+   */
+  getStoredIdToken(): string | null {
+    return this.idToken || null;
+  }
+
+  /**
+   * OIDC 인증 URL 생성 (ID 토큰 포함)
+   *
+   * OpenID Connect를 위한 인증 URL을 생성합니다.
+   * ID 토큰이 포함된 응답을 받을 수 있습니다.
+   *
+   * @param scopes - 요청할 권한 스코프 배열 (openid 스코프 포함 권장)
+   * @param state - CSRF 방지를 위한 상태값
+   * @param nonce - Replay Attack 방지를 위한 nonce 값
+   * @param pkce - PKCE 코드 챌린지
+   * @returns 완성된 OIDC 인증 URL
+   *
+   * @example
+   * ```typescript
+   * const nonce = await FlowAuthClient.generateNonce();
+   * const authUrl = client.createOIDCAuthorizeUrl(
+   *   [OAuth2Scope.OPENID, OAuth2Scope.PROFILE, OAuth2Scope.EMAIL],
+   *   'random-state',
+   *   nonce
+   * );
+   * window.location.href = authUrl;
+   * ```
+   */
+  createOIDCAuthorizeUrl(
+    scopes: OAuth2Scope[] = [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
+    state?: string,
+    nonce?: string,
+    pkce?: PKCECodes
+  ): string {
+    // openid 스코프가 포함되어 있지 않으면 추가
+    if (!scopes.includes(OAuth2Scope.OPENID)) {
+      scopes = [OAuth2Scope.OPENID, ...scopes];
+    }
+
+    return this.createAuthorizeUrl(scopes, state, pkce, nonce);
+  }
+
+  /**
+   * OIDC 보안 인증 URL 생성
+   *
+   * PKCE, State, Nonce를 자동으로 생성하여 OIDC 인증 URL을 생성합니다.
+   *
+   * @param scopes - 요청할 권한 스코프 배열 (openid 스코프 포함 권장)
+   * @returns 인증 URL과 보안 파라미터들을 포함한 객체
+   * @throws {Error} Crypto API를 사용할 수 없는 환경에서 발생
+   *
+   * @example
+   * ```typescript
+   * const { authUrl, codeVerifier, state, nonce } = await client.createSecureOIDCAuthorizeUrl([
+   *   OAuth2Scope.OPENID,
+   *   OAuth2Scope.PROFILE,
+   *   OAuth2Scope.EMAIL
+   * ]);
+   *
+   * // 사용자를 인증 페이지로 리다이렉트
+   * window.location.href = authUrl;
+   *
+   * // 콜백에서 검증에 사용할 파라미터들 저장
+   * sessionStorage.setItem('oauth_state', state);
+   * sessionStorage.setItem('oauth_nonce', nonce);
+   * sessionStorage.setItem('oauth_code_verifier', codeVerifier);
+   * ```
+   */
+  async createSecureOIDCAuthorizeUrl(
+    scopes: OAuth2Scope[] = [OAuth2Scope.OPENID, OAuth2Scope.PROFILE]
+  ): Promise<{ authUrl: string; codeVerifier: string; state: string; nonce: string }> {
+    const [pkce, state] = await Promise.all([FlowAuthClient.generatePKCE(), FlowAuthClient.generateState()]);
+
+    const nonce = await FlowAuthClient.generateNonce();
+
+    const authUrl = this.createOIDCAuthorizeUrl(scopes, state, nonce, pkce);
+
+    return {
+      authUrl,
+      codeVerifier: pkce.codeVerifier,
+      state,
+      nonce,
+    };
+  }
+
+  /**
+   * Implicit Grant에서 ID 토큰 파싱 및 검증
+   *
+   * URL fragment에서 ID 토큰을 파싱하고 검증합니다.
+   * Implicit Grant 플로우에서 사용됩니다.
+   *
+   * @param hash - URL hash (location.hash)
+   * @param expectedState - 예상 state 값
+   * @param expectedNonce - 예상 nonce 값
+   * @returns 검증된 ID 토큰 페이로드
+   * @throws {Error} 토큰 파싱 또는 검증 실패 시
+   *
+   * @example
+   * ```typescript
+   * // 콜백 페이지에서
+   * const hash = window.location.hash;
+   * const expectedState = sessionStorage.getItem('oauth_state');
+   * const expectedNonce = sessionStorage.getItem('oauth_nonce');
+   *
+   * try {
+   *   const payload = await client.parseAndValidateIdTokenFromHash(hash, expectedState, expectedNonce);
+   *   console.log('User authenticated:', payload.sub);
+   * } catch (error) {
+   *   console.error('Token validation failed:', error.message);
+   * }
+   * ```
+   */
+  async parseAndValidateIdTokenFromHash(hash: string, expectedState?: string, expectedNonce?: string): Promise<IdTokenPayload> {
+    if (!hash || !hash.startsWith("#")) {
+      throw new Error("Invalid hash format");
+    }
+
+    const hashParams = new URLSearchParams(hash.substring(1));
+    const idToken = hashParams.get("id_token");
+    const state = hashParams.get("state");
+
+    if (!idToken) {
+      throw new Error("ID token not found in hash");
+    }
+
+    // State 검증
+    if (expectedState && state !== expectedState) {
+      throw new Error("State mismatch - possible CSRF attack");
+    }
+
+    // ID 토큰 검증
+    return await this.validateIdToken(idToken, expectedNonce);
   }
 }

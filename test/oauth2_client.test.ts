@@ -76,4 +76,45 @@ describe("FlowAuthClient", () => {
     // Base64url 형식 검증 (URL-safe 문자들로만 구성)
     expect(state).toMatch(/^[A-Za-z0-9\-_]+$/);
   });
+
+  it("should generate nonce", async () => {
+    const nonce = await FlowAuthClient.generateNonce();
+    expect(typeof nonce).toBe("string");
+    expect(nonce.length).toBeGreaterThan(0);
+    // Base64url 형식 검증 (URL-safe 문자들로만 구성)
+    expect(nonce).toMatch(/^[A-Za-z0-9\-_]+$/);
+  });
+
+  it("should create OIDC authorize URL", () => {
+    const url = client.createOIDCAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE], "state123", "nonce123");
+    expect(url).toContain("response_type=code+id_token");
+    expect(url).toContain("client_id=client-id");
+    expect(url).toContain("redirect_uri=https%3A%2F%2Fexample.com%2Fcallback");
+    expect(url).toContain("scope=openid+profile");
+    expect(url).toContain("state=state123");
+    expect(url).toContain("nonce=nonce123");
+  });
+
+  it("should create OIDC authorize URL with openid scope automatically added", () => {
+    const url = client.createOIDCAuthorizeUrl([OAuth2Scope.PROFILE], "state123", "nonce123");
+    expect(url).toContain("scope=openid+profile");
+  });
+
+  it("should create secure OIDC authorize URL", async () => {
+    const result = await client.createSecureOIDCAuthorizeUrl([OAuth2Scope.PROFILE]);
+    expect(result).toHaveProperty("authUrl");
+    expect(result).toHaveProperty("codeVerifier");
+    expect(result).toHaveProperty("state");
+    expect(result).toHaveProperty("nonce");
+    expect(typeof result.authUrl).toBe("string");
+    expect(typeof result.codeVerifier).toBe("string");
+    expect(typeof result.state).toBe("string");
+    expect(typeof result.nonce).toBe("string");
+    expect(result.authUrl).toContain("response_type=code+id_token");
+    expect(result.authUrl).toContain("scope=openid+profile");
+    expect(result.authUrl).toContain("nonce=");
+    expect(result.authUrl).toContain("code_challenge=");
+    expect(result.authUrl).toContain("code_challenge_method=S256");
+    expect(result.authUrl).toContain("state=");
+  });
 });
