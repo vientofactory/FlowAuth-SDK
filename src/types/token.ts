@@ -33,9 +33,9 @@ export interface UserInfo {
 }
 
 /**
- * 토큰 저장소 인터페이스
+ * 토큰 데이터 인터페이스
  */
-export interface TokenStorage {
+export interface TokenData {
   /** 액세스 토큰 */
   access_token: string;
   /** 리프래시 토큰 (선택적) */

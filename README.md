@@ -23,7 +23,15 @@ FlowAuth와의 OAuth2 및 OpenID Connect 통합을 위한 간단한 TypeScript/J
 ### Node.js 환경
 
 - Node.js 15+ (Web Crypto API 지원)
-- Node.js 14 이하에서는 추가 설정 필요
+- Node.js 18+에서는 `fetch`가 기본 제공되어 추가 설정 불필요
+- Node.js 14-17에서는 `node-fetch` 설치 권장:
+  ```bash
+  npm install node-fetch
+  ```
+- **토큰 저장**: Node.js 환경에서도 토큰 저장이 완전히 지원됩니다
+  - 기본값: `MemoryStorage` (애플리케이션 실행 중 유지)
+  - 영구 저장: `FileStorage` 사용 가능
+  - 커스텀 스토리지: `TokenStorage` 인터페이스 구현
 
 ## 설치
 
@@ -204,7 +212,62 @@ const emailAuthUrl = client.createAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.
 console.log("이메일 정보 접근 인증:", emailAuthUrl);
 ```
 
-### 실전 활용 패턴
+### Node.js 스토리지 사용 예제
+
+```javascript
+const { FlowAuthClient, MemoryStorage, FileStorage, OAuth2Scope } = require("flowauth-oauth2-client");
+
+// 1. 메모리 스토리지 사용 (기본값, 애플리케이션 실행 중에만 유지)
+const client = new FlowAuthClient({
+  server: "https://your-flowauth-server.com",
+  clientId: "your-client-id",
+  clientSecret: "your-client-secret",
+  redirectUri: "https://your-app.com/callback",
+  // storage: new MemoryStorage() // 기본값이므로 생략 가능
+});
+
+// 2. 파일 기반 스토리지 사용 (영구 저장)
+const fileStorage = new FileStorage("./tokens.json");
+const clientWithFileStorage = new FlowAuthClient({
+  server: "https://your-flowauth-server.com",
+  clientId: "your-client-id",
+  clientSecret: "your-client-secret",
+  redirectUri: "https://your-app.com/callback",
+  storage: fileStorage,
+});
+
+// 3. 커스텀 스토리지 구현
+class RedisStorage {
+  constructor(redisClient) {
+    this.redis = redisClient;
+  }
+
+  async getItem(key) {
+    return await this.redis.get(key);
+  }
+
+  async setItem(key, value) {
+    await this.redis.set(key, value);
+  }
+
+  async removeItem(key) {
+    await this.redis.del(key);
+  }
+
+  async clear() {
+    // Redis에서 모든 키 삭제 로직
+  }
+}
+
+const redisStorage = new RedisStorage(redisClient);
+const clientWithRedis = new FlowAuthClient({
+  server: "https://your-flowauth-server.com",
+  clientId: "your-client-id",
+  clientSecret: "your-client-secret",
+  redirectUri: "https://your-app.com/callback",
+  storage: redisStorage,
+});
+```
 
 #### 사용자 프로필 애플리케이션
 
@@ -429,7 +492,7 @@ new FlowAuthClient(config: OAuth2ClientConfig)
 - `clientId`: OAuth2 클라이언트 ID
 - `clientSecret`: OAuth2 클라이언트 시크릿
 - `redirectUri`: 인증 후 리다이렉트 URI
-- `storage?`: 커스텀 스토리지 구현 (기본값: 브라우저 sessionStorage)
+- `storage?`: 커스텀 스토리지 구현 (기본값: 브라우저 sessionStorage 또는 Node.js MemoryStorage)
 - `autoRefresh?`: 자동 토큰 리프래시 활성화 (기본값: true)
 
 #### 메소드
@@ -449,6 +512,52 @@ new FlowAuthClient(config: OAuth2ClientConfig)
 - `FlowAuthClient.generatePKCE()`: PKCE 챌린지 생성
 - `FlowAuthClient.generateState()`: OAuth2 State 파라미터 생성
 - `FlowAuthClient.generateSecureAuthParams()`: PKCE와 State를 함께 생성
+
+### 스토리지 클래스
+
+#### MemoryStorage
+
+메모리 기반 스토리지로 애플리케이션 실행 중에만 데이터를 유지합니다.
+
+```typescript
+class MemoryStorage implements TokenStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+  clear(): void;
+}
+```
+
+#### FileStorage
+
+JSON 파일에 데이터를 영구 저장하는 스토리지입니다.
+
+```typescript
+class FileStorage implements TokenStorage {
+  constructor(filePath?: string);
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+  clear(): void;
+}
+```
+
+**파라미터:**
+
+- `filePath`: 토큰을 저장할 파일 경로 (기본값: "./.flowauth-tokens.json")
+
+#### TokenStorage 인터페이스
+
+커스텀 스토리지를 구현하기 위한 인터페이스입니다.
+
+```typescript
+interface TokenStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+  clear?(): void;
+}
+```
 
 ### 에러 처리
 

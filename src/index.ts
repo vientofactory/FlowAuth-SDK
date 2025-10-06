@@ -12,6 +12,7 @@ export * from "./constants/oauth2";
 // 유틸리티 export
 export * from "./utils/environment";
 export * from "./utils/oidc";
+export * from "./utils/storage";
 
 // 에러 클래스 export
 export * from "./errors/oauth2";

@@ -1,4 +1,19 @@
 /**
+ * 범용 스토리지 인터페이스
+ * 브라우저와 Node.js 환경 모두에서 사용할 수 있는 스토리지 인터페이스
+ */
+export interface TokenStorage {
+  /** 키에 해당하는 값 가져오기 */
+  getItem(key: string): string | null;
+  /** 키-값 쌍 저장 */
+  setItem(key: string, value: string): void;
+  /** 키에 해당하는 값 제거 */
+  removeItem(key: string): void;
+  /** 모든 데이터 제거 */
+  clear?(): void;
+}
+
+/**
  * OAuth2 클라이언트 설정 인터페이스
  */
 export interface OAuth2ClientConfig {
@@ -10,8 +25,8 @@ export interface OAuth2ClientConfig {
   clientSecret: string;
   /** 인증 후 리다이렉트될 URI */
   redirectUri: string;
-  /** 토큰 저장을 위한 스토리지 (기본값: 브라우저 sessionStorage) */
-  storage?: Storage;
+  /** 토큰 저장을 위한 스토리지 (기본값: 브라우저 sessionStorage 또는 Node.js MemoryStorage) */
+  storage?: TokenStorage;
   /** 자동 토큰 리프래시 활성화 여부 (기본값: true) */
   autoRefresh?: boolean;
 }
