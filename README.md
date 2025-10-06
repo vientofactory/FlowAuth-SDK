@@ -464,8 +464,8 @@ try {
 }
 ```
 
-자세한 API 문서와 OAuth2/OIDC 플로우 설명은 [OAUTH2_GUIDE.md](../OAUTH2_GUIDE.md)를 참조하세요.
+자세한 API 문서와 OAuth2/OIDC 플로우 설명은 [가이드 문서](https://github.com/vientofactory/FlowAuth/blob/main/OAUTH2_GUIDE.md)를 참조하세요.
 
 ## 라이선스
 
-이 SDK는 FlowAuth 프로젝트의 일부입니다. 라이선스 정보는 [LICENSE](../LICENSE)를 참조하세요.
+이 SDK는 FlowAuth 프로젝트의 일부입니다. FlowAuth 프로젝트와 동일한 MIT 라이선스를 사용합니다.
