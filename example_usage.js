@@ -1,3 +1,5 @@
+// 실제 사용 시 올바른 SDK 위치를 import 하세요.
+// 클라이언트 SDK 설치: npm install flowauth-oauth2-client
 import { FlowAuthClient, OAuth2Scope } from "./dist/index";
 import { createInterface } from "readline";
 
