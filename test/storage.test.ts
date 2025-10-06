@@ -3,6 +3,7 @@ import { MemoryStorage, FileStorage, getDefaultStorage } from "../src/utils/stor
 import { EnvironmentUtils } from "../src/utils/environment";
 import * as fs from "fs";
 import * as path from "path";
+import * as os from "os";
 
 describe("Storage Implementations", () => {
   describe("MemoryStorage", () => {
@@ -106,15 +107,33 @@ describe("Storage Implementations", () => {
     });
 
     it("should handle file I/O errors gracefully", () => {
-      // Create a storage instance with a read-only directory path
-      // This should cause write errors but not crash the application
-      const readOnlyStorage = new FileStorage("/etc/passwd"); // System file that might be read-only
+      // Create a temporary read-only directory for testing
+      const tempDir = path.join(os.tmpdir(), "readonly-test");
+      const testFilePath = path.join(tempDir, "test-storage.json");
 
-      // Should not throw when setting item, even if file write fails
-      expect(() => readOnlyStorage.setItem("key", "value")).not.toThrow();
+      try {
+        // Create the directory
+        fs.mkdirSync(tempDir, { recursive: true });
+        // Make it read-only
+        fs.chmodSync(tempDir, 0o444);
 
-      // Should still work in memory even if file write fails
-      expect(readOnlyStorage.getItem("key")).toBe("value");
+        // Create storage instance with file in read-only directory
+        const readOnlyStorage = new FileStorage(testFilePath);
+
+        // Should not throw when setting item, even if file write fails
+        expect(() => readOnlyStorage.setItem("key", "value")).not.toThrow();
+
+        // Should still work in memory even if file write fails
+        expect(readOnlyStorage.getItem("key")).toBe("value");
+      } finally {
+        // Clean up: make directory writable again and remove it
+        try {
+          fs.chmodSync(tempDir, 0o755);
+          fs.rmSync(tempDir, { recursive: true, force: true });
+        } catch (cleanupError) {
+          // Ignore cleanup errors
+        }
+      }
     });
 
     it.skip("should handle complex JSON data", () => {
