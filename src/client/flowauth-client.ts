@@ -1,7 +1,8 @@
-import { OAuth2ClientConfig, OIDCDiscoveryDocument, PKCECodes, IdTokenPayload } from "../types/oauth2";
-import { TokenStorage, TokenResponse, UserInfo } from "../types/token";
+import { OAuth2ClientConfig, OIDCDiscoveryDocument, PKCECodes, IdTokenPayload, TokenStorage } from "../types/oauth2";
+import { TokenResponse, UserInfo, TokenData } from "../types/token";
 import { OAuth2Error } from "../errors/oauth2";
 import { EnvironmentUtils } from "../utils/environment";
+import { getDefaultStorage } from "../utils/storage";
 import { OIDCUtils } from "../utils/oidc";
 import { OAuth2Scope, DEFAULT_SCOPES, OAUTH2_CONSTANTS } from "../constants/oauth2";
 
@@ -15,11 +16,11 @@ export class FlowAuthClient {
   /** FlowAuth 서버 URL */
   private server: string;
   /** 토큰 저장을 위한 스토리지 */
-  private storage?: Storage;
+  private storage?: TokenStorage;
   /** 자동 토큰 리프래시 활성화 여부 */
   private autoRefresh: boolean;
   /** 저장된 토큰 데이터 */
-  private tokenData?: TokenStorage;
+  private tokenData?: TokenData;
   /** 진행 중인 리프래시 작업 */
   private refreshPromise?: Promise<TokenResponse>;
   /** OIDC Discovery 문서 캐시 */
@@ -56,7 +57,7 @@ export class FlowAuthClient {
     this.clientSecret = config.clientSecret;
     this.redirectUri = config.redirectUri;
     this.server = config.server;
-    this.storage = config.storage || EnvironmentUtils.getDefaultStorage();
+    this.storage = config.storage || getDefaultStorage();
     this.autoRefresh = config.autoRefresh !== false;
 
     if (!this.clientId || !this.clientSecret || !this.redirectUri || !this.server) {
@@ -287,7 +288,8 @@ export class FlowAuthClient {
         }
       }
     } catch (error) {
-      console.warn("Failed to load stored tokens:", error);
+      // Silently handle storage errors during initialization
+      // This prevents client creation from failing due to storage issues
     }
   }
 
@@ -333,7 +335,7 @@ export class FlowAuthClient {
    * 토큰 만료 확인
    */
   private isTokenExpired(): boolean {
-    return !this.tokenData || Date.now() >= this.tokenData.expires_at;
+    return !this.tokenData || !this.tokenData.expires_at || Date.now() >= this.tokenData.expires_at;
   }
 
   /**
@@ -629,7 +631,7 @@ export class FlowAuthClient {
    * }
    * ```
    */
-  getTokenInfo(): TokenStorage | null {
+  getTokenInfo(): TokenData | null {
     return this.tokenData || null;
   }
 

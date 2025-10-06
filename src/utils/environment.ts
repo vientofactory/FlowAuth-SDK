@@ -70,7 +70,9 @@ export class EnvironmentUtils {
   }
 
   /**
-   * 브라우저 환경에서 사용할 기본 스토리지를 반환합니다.
+   * 환경에 맞는 기본 스토리지를 반환합니다.
+   * 브라우저: sessionStorage/localStorage
+   * Node.js: MemoryStorage
    * @returns 사용할 수 있는 Storage 인스턴스 또는 undefined
    */
   static getDefaultStorage(): Storage | undefined {
@@ -106,7 +108,7 @@ export class EnvironmentUtils {
       }
       throw new Error("fetch is not available. Please install node-fetch or use Node.js 18+");
     }
-    throw new Error("fetch is not available in this environment");
+    throw new Error("fetch is not available in this environment. For Node.js, use version 18+ or install node-fetch.");
   }
 
   /**
