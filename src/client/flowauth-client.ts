@@ -690,7 +690,7 @@ export class FlowAuthClient {
       throw new Error("JWKS URI not found in discovery document");
     }
 
-    return await OIDCUtils.validateAndParseIdTokenWithRsa(token, discovery.jwks_uri, this.server, this.clientId, expectedNonce || this.nonce);
+    return await OIDCUtils.validateAndParseIdTokenWithRsa(token, discovery.jwks_uri, discovery.issuer, this.clientId, expectedNonce || this.nonce);
   }
 
   /**
