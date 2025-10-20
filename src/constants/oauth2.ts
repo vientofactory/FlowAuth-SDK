@@ -12,6 +12,72 @@ export enum OAuth2Scope {
 }
 
 /**
+ * OAuth2 응답 타입 열거형
+ */
+export enum OAuth2ResponseType {
+  /** Authorization Code */
+  CODE = "code",
+  /** Access Token (Implicit Grant) */
+  TOKEN = "token",
+  /** ID Token (OIDC) */
+  ID_TOKEN = "id_token",
+  /** Authorization Code + ID Token (Hybrid Flow) */
+  CODE_ID_TOKEN = "code id_token",
+  /** Access Token + ID Token (Hybrid Flow) */
+  TOKEN_ID_TOKEN = "token id_token",
+}
+
+/**
+ * OAuth2 Grant 타입 열거형
+ */
+export enum OAuth2GrantType {
+  /** Authorization Code Grant */
+  AUTHORIZATION_CODE = "authorization_code",
+  /** Refresh Token Grant */
+  REFRESH_TOKEN = "refresh_token",
+  /** Client Credentials Grant */
+  CLIENT_CREDENTIALS = "client_credentials",
+}
+
+/**
+ * OAuth2 토큰 타입 열거형
+ */
+export enum OAuth2TokenType {
+  /** Bearer Token */
+  BEARER = "Bearer",
+}
+
+/**
+ * OAuth2 응답 타입 런타임 상수 객체
+ * @deprecated TypeScript 환경에서는 OAuth2ResponseType enum을 사용하세요
+ */
+export const OAuth2ResponseTypes = {
+  CODE: OAuth2ResponseType.CODE,
+  TOKEN: OAuth2ResponseType.TOKEN,
+  ID_TOKEN: OAuth2ResponseType.ID_TOKEN,
+  CODE_ID_TOKEN: OAuth2ResponseType.CODE_ID_TOKEN,
+  TOKEN_ID_TOKEN: OAuth2ResponseType.TOKEN_ID_TOKEN,
+} as const;
+
+/**
+ * OAuth2 Grant 타입 런타임 상수 객체
+ * @deprecated TypeScript 환경에서는 OAuth2GrantType enum을 사용하세요
+ */
+export const OAuth2GrantTypes = {
+  AUTHORIZATION_CODE: OAuth2GrantType.AUTHORIZATION_CODE,
+  REFRESH_TOKEN: OAuth2GrantType.REFRESH_TOKEN,
+  CLIENT_CREDENTIALS: OAuth2GrantType.CLIENT_CREDENTIALS,
+} as const;
+
+/**
+ * OAuth2 토큰 타입 런타임 상수 객체
+ * @deprecated TypeScript 환경에서는 OAuth2TokenType enum을 사용하세요
+ */
+export const OAuth2TokenTypes = {
+  BEARER: OAuth2TokenType.BEARER,
+} as const;
+
+/**
  * 기본 스코프 목록
  * 새로운 클라이언트에 기본적으로 부여되는 스코프들입니다.
  */
@@ -26,32 +92,26 @@ export const DEFAULT_SCOPES: OAuth2Scope[] = [
 export const OAUTH2_CONSTANTS = {
   /** 지원되는 응답 타입들 */
   SUPPORTED_RESPONSE_TYPES: [
-    "code",
-    "token",
-    "id_token",
-    "code id_token",
-    "token id_token",
+    OAuth2ResponseType.CODE,
+    OAuth2ResponseType.TOKEN,
+    OAuth2ResponseType.ID_TOKEN,
+    OAuth2ResponseType.CODE_ID_TOKEN,
+    OAuth2ResponseType.TOKEN_ID_TOKEN,
   ] as const,
   /** 지원되는 Grant 타입들 */
   SUPPORTED_GRANT_TYPES: [
-    "authorization_code",
-    "refresh_token",
-    "client_credentials",
+    OAuth2GrantType.AUTHORIZATION_CODE,
+    OAuth2GrantType.REFRESH_TOKEN,
+    OAuth2GrantType.CLIENT_CREDENTIALS,
   ] as const,
-  /** 응답 타입 상수들 */
-  RESPONSE_TYPES: {
-    CODE: "code",
-    TOKEN: "token",
-    ID_TOKEN: "id_token",
-    CODE_ID_TOKEN: "code id_token",
-    TOKEN_ID_TOKEN: "token id_token",
-  } as const,
-  /** 토큰 타입 상수들 */
-  TOKEN_TYPES: {
-    BEARER: "Bearer",
-  } as const,
+  /** 응답 타입 상수들 (하위 호환성) */
+  RESPONSE_TYPES: OAuth2ResponseTypes,
+  /** Grant 타입 상수들 (하위 호환성) */
+  GRANT_TYPES: OAuth2GrantTypes,
+  /** 토큰 타입 상수들 (하위 호환성) */
+  TOKEN_TYPES: OAuth2TokenTypes,
   /** 기본 토큰 만료 시간 (1시간) */
   DEFAULT_TOKEN_EXPIRY_SECONDS: 3600,
   /** Bearer 토큰 타입 (하위 호환성) */
-  TOKEN_TYPE_BEARER: "Bearer",
+  TOKEN_TYPE_BEARER: OAuth2TokenType.BEARER,
 } as const;

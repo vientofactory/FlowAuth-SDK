@@ -4,7 +4,6 @@ import {
   PKCECodes,
   IdTokenPayload,
   TokenStorage,
-  OAuth2ResponseType,
   OAuth2CallbackParams,
 } from "../types/oauth2";
 import { TokenResponse, UserInfo, TokenData } from "../types/token";
@@ -12,7 +11,11 @@ import { OAuth2Error } from "../errors/oauth2";
 import { EnvironmentUtils } from "../utils/environment";
 import { getDefaultStorage } from "../utils/storage";
 import { OIDCUtils } from "../utils/oidc";
-import { OAuth2Scope, OAUTH2_CONSTANTS } from "../constants/oauth2";
+import {
+  OAuth2Scope,
+  OAuth2ResponseType,
+  OAUTH2_CONSTANTS,
+} from "../constants/oauth2";
 
 export class FlowAuthClient {
   /** OAuth2 클라이언트 ID */
@@ -894,7 +897,7 @@ export class FlowAuthClient {
       state,
       undefined,
       undefined,
-      "token",
+      OAuth2ResponseType.TOKEN,
     );
   }
 
@@ -932,7 +935,7 @@ export class FlowAuthClient {
       state,
       nonce,
       undefined,
-      "id_token",
+      OAuth2ResponseType.ID_TOKEN,
     );
   }
 
@@ -976,7 +979,7 @@ export class FlowAuthClient {
       state,
       nonce,
       undefined,
-      "token id_token",
+      OAuth2ResponseType.TOKEN_ID_TOKEN,
     );
   }
 

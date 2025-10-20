@@ -1,27 +1,4 @@
 /**
- * OAuth2 응답 타입 정의
- */
-export type OAuth2ResponseType =
-  | "code"
-  | "token"
-  | "id_token"
-  | "code id_token"
-  | "token id_token";
-
-/**
- * OAuth2 Grant 타입 정의
- */
-export type OAuth2GrantType =
-  | "authorization_code"
-  | "refresh_token"
-  | "client_credentials";
-
-/**
- * OAuth2 토큰 타입 정의
- */
-export type OAuth2TokenType = "Bearer";
-
-/**
  * 범용 스토리지 인터페이스
  * 브라우저와 Node.js 환경 모두에서 사용할 수 있는 스토리지 인터페이스
  */
@@ -91,6 +68,7 @@ export interface IdTokenPayload {
   /** 권한 부여자 */
   azp?: string;
   /** 추가 클레임들 */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
 }
 

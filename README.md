@@ -49,10 +49,16 @@ npm install flowauth-oauth2-client
 
 ## 사용법
 
-### 기본 사용법
+### TypeScript 환경
 
-```javascript
-const { FlowAuthClient } = require("flowauth-oauth2-client");
+```typescript
+import {
+  FlowAuthClient,
+  OAuth2Scope,
+  OAuth2ResponseType,
+  OAuth2GrantType,
+  OAuth2TokenType
+} from "flowauth-oauth2-client";
 
 // 클라이언트 초기화 (자동 토큰 저장 활성화)
 const client = new FlowAuthClient({
@@ -63,9 +69,30 @@ const client = new FlowAuthClient({
   autoRefresh: true, // 자동 토큰 리프래시 활성화 (기본값: true)
 });
 
-// 1. State 생성 및 인증 URL 생성
+// 1. State 생성 및 인증 URL 생성 (타입 안전한 enum 사용)
 const state = await FlowAuthClient.generateState();
-const authUrl = client.createAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE, OAuth2Scope.EMAIL], state);
+
+// Authorization Code Flow (권장)
+const authUrl = client.createAuthorizeUrl({
+  responseType: OAuth2ResponseType.CODE,
+  scope: [OAuth2Scope.OPENID, OAuth2Scope.PROFILE, OAuth2Scope.EMAIL],
+  state,
+});
+
+// Implicit Flow
+const implicitUrl = client.createAuthorizeUrl({
+  responseType: OAuth2ResponseType.TOKEN,
+  scope: [OAuth2Scope.OPENID, OAuth2Scope.EMAIL],
+  state,
+});
+
+// Hybrid Flow
+const hybridUrl = client.createAuthorizeUrl({
+  responseType: OAuth2ResponseType.CODE_ID_TOKEN,
+  scope: [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
+  state,
+});
+
 console.log("인증 URL:", authUrl);
 // 사용자를 authUrl로 리다이렉트
 
@@ -77,14 +104,94 @@ try {
   const receivedCode = urlParams.get("code");
 
   // State 검증 (CSRF 방지)
-  if (receivedState !== state) {
-    throw new Error("State mismatch - possible CSRF attack");
+```
+
+### 순수 JavaScript 환경
+
+SDK는 순수 JavaScript 환경에서도 완전히 지원됩니다. 런타임 상수 객체들을 제공하여 타입 정의 없이도 안전하게 사용할 수 있습니다.
+
+```javascript
+const {
+  FlowAuthClient,
+  OAuth2ResponseTypes,
+  OAuth2GrantTypes,
+  OAuth2TokenTypes,
+  OAuth2Scope,
+  OAUTH2_CONSTANTS,
+} = require("flowauth-oauth2-client");
+
+// 클라이언트 초기화
+const client = new FlowAuthClient({
+  server: "https://your-flowauth-server.com",
+  clientId: "your-client-id",
+  clientSecret: "your-client-secret",
+  redirectUri: "https://your-app.com/callback",
+});
+
+// 런타임 상수 사용
+console.log("지원되는 응답 타입들:", OAuth2ResponseTypes);
+// 출력: { CODE: "code", TOKEN: "token", ID_TOKEN: "id_token", ... }
+
+console.log("지원되는 Grant 타입들:", OAuth2GrantTypes);
+// 출력: { AUTHORIZATION_CODE: "authorization_code", REFRESH_TOKEN: "refresh_token", ... }
+
+// Authorization Code Flow
+const authUrl = client.createAuthorizeUrl({
+  responseType: OAuth2ResponseTypes.CODE, // "code"
+  scope: [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
+  state: "your-state-value",
+});
+
+// Implicit Flow
+const implicitUrl = client.createAuthorizeUrl({
+  responseType: OAuth2ResponseTypes.TOKEN, // "token"
+  scope: [OAuth2Scope.OPENID, OAuth2Scope.EMAIL],
+  state: "your-state-value",
+});
+
+// 콜백 처리
+function handleCallback(callbackParams) {
+  // Authorization Code 처리
+  if (callbackParams.code) {
+    client
+      .exchangeCodeForTokens(callbackParams.code, callbackParams.state)
+      .then(tokens => console.log("토큰 받음:", tokens))
+      .catch(error => console.error("토큰 교환 실패:", error));
   }
 
-  const tokens = await client.exchangeCode(receivedCode);
-  console.log("Tokens:", tokens);
+  // Implicit Grant 토큰 처리
+  if (
+    callbackParams.access_token &&
+    callbackParams.token_type === OAuth2TokenTypes.BEARER
+  ) {
+    console.log("Bearer 토큰 받음:", callbackParams.access_token);
+  }
+
+  // 에러 처리
+  if (callbackParams.error) {
+    console.error("OAuth2 에러:", callbackParams.error);
+  }
+}
+
+// 응답 타입 검증
+function isValidResponseType(responseType) {
+  return OAUTH2_CONSTANTS.SUPPORTED_RESPONSE_TYPES.includes(responseType);
+}
+
+console.log(isValidResponseType(OAuth2ResponseTypes.CODE)); // true
+console.log(isValidResponseType("invalid_type")); // false
+```
+
+### 기본 사용법
+
+if (receivedState !== state) {
+throw new Error("State mismatch - possible CSRF attack");
+}
+
+const tokens = await client.exchangeCode(receivedCode);
+console.log("Tokens:", tokens);
 } catch (error) {
-  console.error("Authentication failed:", error.message);
+console.error("Authentication failed:", error.message);
 }
 
 // 3. 저장된 토큰으로 사용자 정보 조회 (자동 리프래시)
@@ -97,7 +204,8 @@ console.log("Token is valid:", isValid);
 
 // 5. 로그아웃 (저장된 토큰 제거)
 client.logout();
-```
+
+````
 
 ### PKCE 및 State 사용 예제
 
@@ -118,7 +226,7 @@ const { authUrl, codeVerifier, state } = await client.createSecureAuthorizeUrl([
 // authUrl로 사용자를 리다이렉트하고, codeVerifier와 state를 세션에 저장
 // 콜백에서:
 const tokens = await client.exchangeCode("authorization-code", codeVerifier);
-```
+````
 
 ### OIDC Hybrid Flow 사용 예제
 
@@ -139,7 +247,12 @@ const pkce = await FlowAuthClient.generatePKCE();
 const state = await FlowAuthClient.generateState();
 const nonce = await FlowAuthClient.generateNonce();
 
-const authUrl = client.createAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE, OAuth2Scope.EMAIL], state, pkce, nonce);
+const authUrl = client.createAuthorizeUrl(
+  [OAuth2Scope.OPENID, OAuth2Scope.PROFILE, OAuth2Scope.EMAIL],
+  state,
+  pkce,
+  nonce,
+);
 
 // 세션에 파라미터 저장
 sessionStorage.setItem("oauth_code_verifier", pkce.codeVerifier);
@@ -156,7 +269,12 @@ const expectedNonce = sessionStorage.getItem("oauth_nonce");
 const codeVerifier = sessionStorage.getItem("oauth_code_verifier");
 
 try {
-  const tokens = await client.handleHybridCallback(callbackUrl, expectedState, expectedNonce, codeVerifier);
+  const tokens = await client.handleHybridCallback(
+    callbackUrl,
+    expectedState,
+    expectedNonce,
+    codeVerifier,
+  );
 
   console.log("Access Token:", tokens.access_token);
   console.log("ID Token:", tokens.id_token);
@@ -166,11 +284,12 @@ try {
 }
 
 // 방법 2: 자동화된 Hybrid Flow (가장 간단)
-const { authUrl, codeVerifier, state, nonce } = await client.createSecureOIDCAuthorizeUrl([
-  OAuth2Scope.OPENID,
-  OAuth2Scope.PROFILE,
-  OAuth2Scope.EMAIL,
-]);
+const { authUrl, codeVerifier, state, nonce } =
+  await client.createSecureOIDCAuthorizeUrl([
+    OAuth2Scope.OPENID,
+    OAuth2Scope.PROFILE,
+    OAuth2Scope.EMAIL,
+  ]);
 
 // 세션에 파라미터 저장
 sessionStorage.setItem("oauth_code_verifier", codeVerifier);
@@ -185,7 +304,7 @@ const tokens = await client.handleHybridCallback(
   window.location.href,
   sessionStorage.getItem("oauth_state"),
   sessionStorage.getItem("oauth_nonce"),
-  sessionStorage.getItem("oauth_code_verifier")
+  sessionStorage.getItem("oauth_code_verifier"),
 );
 ```
 
@@ -194,7 +313,11 @@ const tokens = await client.handleHybridCallback(
 SDK는 TypeScript enum을 통해 타입 안전한 스코프 관리를 제공합니다:
 
 ```javascript
-const { FlowAuthClient, OAuth2Scope, DEFAULT_SCOPES } = require("flowauth-oauth2-client");
+const {
+  FlowAuthClient,
+  OAuth2Scope,
+  DEFAULT_SCOPES,
+} = require("flowauth-oauth2-client");
 
 const client = new FlowAuthClient({
   server: "https://your-flowauth-server.com",
@@ -208,14 +331,23 @@ const authUrl = client.createAuthorizeUrl(DEFAULT_SCOPES);
 console.log("기본 권한으로 인증:", authUrl);
 
 // 2. 이메일 권한 추가 요청
-const emailAuthUrl = client.createAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE, OAuth2Scope.EMAIL]);
+const emailAuthUrl = client.createAuthorizeUrl([
+  OAuth2Scope.OPENID,
+  OAuth2Scope.PROFILE,
+  OAuth2Scope.EMAIL,
+]);
 console.log("이메일 정보 접근 인증:", emailAuthUrl);
 ```
 
 ### Node.js 스토리지 사용 예제
 
 ```javascript
-const { FlowAuthClient, MemoryStorage, FileStorage, OAuth2Scope } = require("flowauth-oauth2-client");
+const {
+  FlowAuthClient,
+  MemoryStorage,
+  FileStorage,
+  OAuth2Scope,
+} = require("flowauth-oauth2-client");
 
 // 1. 메모리 스토리지 사용 (기본값, 애플리케이션 실행 중에만 유지)
 const client = new FlowAuthClient({
@@ -286,7 +418,12 @@ class UserProfileApp {
 
   // 로그인 시작
   async startLogin() {
-    const { authUrl, codeVerifier, state } = await this.client.createSecureAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE, OAuth2Scope.EMAIL]);
+    const { authUrl, codeVerifier, state } =
+      await this.client.createSecureAuthorizeUrl([
+        OAuth2Scope.OPENID,
+        OAuth2Scope.PROFILE,
+        OAuth2Scope.EMAIL,
+      ]);
 
     // 세션에 PKCE 정보 저장
     sessionStorage.setItem("oauth_code_verifier", codeVerifier);
@@ -394,7 +531,11 @@ class PermissionBasedUI {
     console.log("- 이메일 주소 접근 권한");
 
     // 추가 권한으로 재인증 링크 생성
-    const authUrl = this.client.createAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE, OAuth2Scope.EMAIL]);
+    const authUrl = this.client.createAuthorizeUrl([
+      OAuth2Scope.OPENID,
+      OAuth2Scope.PROFILE,
+      OAuth2Scope.EMAIL,
+    ]);
     console.log("추가 권한 요청 URL:", authUrl);
   }
 }
