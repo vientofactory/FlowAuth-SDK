@@ -1,4 +1,27 @@
 /**
+ * OAuth2 응답 타입 정의
+ */
+export type OAuth2ResponseType =
+  | "code"
+  | "token"
+  | "id_token"
+  | "code id_token"
+  | "token id_token";
+
+/**
+ * OAuth2 Grant 타입 정의
+ */
+export type OAuth2GrantType =
+  | "authorization_code"
+  | "refresh_token"
+  | "client_credentials";
+
+/**
+ * OAuth2 토큰 타입 정의
+ */
+export type OAuth2TokenType = "Bearer";
+
+/**
  * 범용 스토리지 인터페이스
  * 브라우저와 Node.js 환경 모두에서 사용할 수 있는 스토리지 인터페이스
  */
@@ -92,6 +115,28 @@ export interface JWKSKey {
  */
 export interface JWKSResponse {
   keys: JWKSKey[];
+}
+
+/**
+ * OAuth2 콜백 파라미터 인터페이스
+ */
+export interface OAuth2CallbackParams {
+  /** Authorization Code (Authorization Code Grant) */
+  code?: string;
+  /** State 파라미터 (CSRF 방지) */
+  state?: string;
+  /** ID Token (OIDC) */
+  idToken?: string;
+  /** Access Token (Implicit Grant) */
+  accessToken?: string;
+  /** Token Type */
+  tokenType?: string;
+  /** Token 만료 시간 (초) */
+  expiresIn?: number;
+  /** 에러 코드 */
+  error?: string;
+  /** 에러 설명 */
+  errorDescription?: string;
 }
 
 /**

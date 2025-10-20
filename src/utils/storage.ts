@@ -50,7 +50,9 @@ export class FileStorage implements TokenStorage {
         this.fs = require("fs");
       } catch (error) {
         // fs 모듈을 사용할 수 없는 환경
-        console.warn("FileStorage: fs module not available, falling back to memory storage");
+        console.warn(
+          "FileStorage: fs module not available, falling back to memory storage",
+        );
       }
     }
   }

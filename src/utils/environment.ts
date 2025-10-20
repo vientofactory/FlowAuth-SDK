@@ -8,7 +8,9 @@ export class EnvironmentUtils {
    * @returns 브라우저 환경이면 true
    */
   static isBrowser(): boolean {
-    return typeof window !== "undefined" && typeof window.document !== "undefined";
+    return (
+      typeof window !== "undefined" && typeof window.document !== "undefined"
+    );
   }
 
   /**
@@ -16,7 +18,10 @@ export class EnvironmentUtils {
    * @returns Node.js 환경이면 true
    */
   static isNode(): boolean {
-    return typeof globalThis !== "undefined" && typeof (globalThis as any).process !== "undefined";
+    return (
+      typeof globalThis !== "undefined" &&
+      typeof (globalThis as any).process !== "undefined"
+    );
   }
 
   /**
@@ -31,7 +36,10 @@ export class EnvironmentUtils {
       // Node.js 환경에서 crypto 모듈 사용
       try {
         // Node.js 15+에서는 globalThis.crypto.webcrypto 사용
-        if (typeof globalThis.crypto !== "undefined" && globalThis.crypto.subtle) {
+        if (
+          typeof globalThis.crypto !== "undefined" &&
+          globalThis.crypto.subtle
+        ) {
           return globalThis.crypto;
         }
         // 구버전 Node.js에서는 crypto 모듈 import
@@ -106,9 +114,13 @@ export class EnvironmentUtils {
       if (nodeFetch) {
         return nodeFetch;
       }
-      throw new Error("fetch is not available. Please install node-fetch or use Node.js 18+");
+      throw new Error(
+        "fetch is not available. Please install node-fetch or use Node.js 18+",
+      );
     }
-    throw new Error("fetch is not available in this environment. For Node.js, use version 18+ or install node-fetch.");
+    throw new Error(
+      "fetch is not available in this environment. For Node.js, use version 18+ or install node-fetch.",
+    );
   }
 
   /**
@@ -116,14 +128,22 @@ export class EnvironmentUtils {
    * @param token JWT 토큰 문자열
    * @returns 헤더, 페이로드, 서명
    */
-  static parseJwt(token: string): { header: any; payload: any; signature: string } {
+  static parseJwt(token: string): {
+    header: any;
+    payload: any;
+    signature: string;
+  } {
     const parts = token.split(".");
     if (parts.length !== 3) {
       throw new Error("Invalid JWT token format");
     }
 
-    const header = JSON.parse(this.atob(parts[0].replace(/-/g, "+").replace(/_/g, "/")));
-    const payload = JSON.parse(this.atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+    const header = JSON.parse(
+      this.atob(parts[0].replace(/-/g, "+").replace(/_/g, "/")),
+    );
+    const payload = JSON.parse(
+      this.atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")),
+    );
     const signature = parts[2];
 
     return { header, payload, signature };
@@ -155,7 +175,10 @@ export class EnvironmentUtils {
     } else if (this.isNode()) {
       const Buffer = (globalThis as any).Buffer;
       if (Buffer) {
-        return Buffer.from(input.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString();
+        return Buffer.from(
+          input.replace(/-/g, "+").replace(/_/g, "/"),
+          "base64",
+        ).toString();
       }
       throw new Error("Buffer is not available in this Node.js environment");
     }

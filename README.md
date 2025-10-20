@@ -468,7 +468,6 @@ enum OAuth2Scope {
   OPENID = "openid", // OpenID Connect 인증을 위한 기본 스코프
   PROFILE = "profile", // 사용자 프로필 정보 (이름, 생년월일, 지역, 사진 등) 접근
   EMAIL = "email", // 사용자 이메일 주소 읽기
-  IDENTIFY = "identify", // 계정의 기본 정보 읽기 (사용자 ID, 이름 등) - 레거시
 }
 ```
 

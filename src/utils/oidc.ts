@@ -1,5 +1,10 @@
 import { EnvironmentUtils } from "./environment";
-import { IdTokenPayload, JWKSKey, JWKSResponse, OIDCDiscoveryDocument } from "../types/oauth2";
+import {
+  IdTokenPayload,
+  JWKSKey,
+  JWKSResponse,
+  OIDCDiscoveryDocument,
+} from "../types/oauth2";
 
 /**
  * OpenID Connect 유틸리티 클래스
@@ -11,7 +16,9 @@ export class OIDCUtils {
    * @param issuer Issuer URL
    * @returns Discovery 문서
    */
-  static async getDiscoveryDocument(issuer: string): Promise<OIDCDiscoveryDocument> {
+  static async getDiscoveryDocument(
+    issuer: string,
+  ): Promise<OIDCDiscoveryDocument> {
     const discoveryUrl = `${issuer}/.well-known/openid-configuration`;
     const response = await EnvironmentUtils.getFetch()(discoveryUrl);
 
@@ -43,7 +50,10 @@ export class OIDCUtils {
    * @param kid Key ID
    * @returns RSA 공개키 (CryptoKey)
    */
-  static async getRsaPublicKey(jwksUri: string, kid: string): Promise<CryptoKey> {
+  static async getRsaPublicKey(
+    jwksUri: string,
+    kid: string,
+  ): Promise<CryptoKey> {
     const jwks = await this.getJwks(jwksUri);
     const key = jwks.keys.find((k: JWKSKey) => k.kid === kid);
 
@@ -78,7 +88,7 @@ export class OIDCUtils {
         hash: "SHA-256",
       },
       false,
-      ["verify"]
+      ["verify"],
     );
   }
 
@@ -96,14 +106,16 @@ export class OIDCUtils {
     jwksUri: string,
     expectedIssuer: string,
     expectedAudience: string,
-    expectedNonce?: string
+    expectedNonce?: string,
   ): Promise<IdTokenPayload> {
     try {
       const { header, payload, signature } = EnvironmentUtils.parseJwt(idToken);
 
       // 개발 환경 토큰은 검증 건너뛰기 (HMAC 서명)
       if (header.alg === "HS256") {
-        console.log("Development environment token detected, skipping RSA validation");
+        console.log(
+          "Development environment token detected, skipping RSA validation",
+        );
         return payload as IdTokenPayload;
       }
 
@@ -123,22 +135,37 @@ export class OIDCUtils {
       }
 
       const encoder = new TextEncoder();
-      const data = encoder.encode(`${idToken.split(".")[0]}.${idToken.split(".")[1]}`);
+      const data = encoder.encode(
+        `${idToken.split(".")[0]}.${idToken.split(".")[1]}`,
+      );
 
       // 서명 디코딩
       let signatureBytes: ArrayBuffer;
       if (EnvironmentUtils.isNode()) {
         // Node.js 환경: Buffer 사용
         const signatureBase64 = signature.replace(/-/g, "+").replace(/_/g, "/");
-        const buffer = (globalThis as any).Buffer.from(signatureBase64, "base64");
-        signatureBytes = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+        const buffer = (globalThis as any).Buffer.from(
+          signatureBase64,
+          "base64",
+        );
+        signatureBytes = buffer.buffer.slice(
+          buffer.byteOffset,
+          buffer.byteOffset + buffer.byteLength,
+        );
       } else {
         // 브라우저 환경: atob 사용 (텍스트 데이터에만)
-        const decoded = EnvironmentUtils.atob(signature.replace(/-/g, "+").replace(/_/g, "/"));
-        signatureBytes = Uint8Array.from(decoded, (c) => c.charCodeAt(0)).buffer;
+        const decoded = EnvironmentUtils.atob(
+          signature.replace(/-/g, "+").replace(/_/g, "/"),
+        );
+        signatureBytes = Uint8Array.from(decoded, c => c.charCodeAt(0)).buffer;
       }
 
-      const isValidSignature = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", publicKey, signatureBytes, data);
+      const isValidSignature = await crypto.subtle.verify(
+        "RSASSA-PKCS1-v1_5",
+        publicKey,
+        signatureBytes,
+        data,
+      );
 
       if (!isValidSignature) {
         throw new Error("Invalid RSA signature");
@@ -165,7 +192,9 @@ export class OIDCUtils {
 
       return payload as IdTokenPayload;
     } catch (error) {
-      throw new Error(`RSA ID token validation failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+      throw new Error(
+        `RSA ID token validation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
     }
   }
 
@@ -177,7 +206,12 @@ export class OIDCUtils {
    * @param expectedNonce 예상 nonce
    * @returns 검증된 토큰 페이로드
    */
-  static validateAndParseIdToken(idToken: string, expectedIssuer: string, expectedAudience: string, expectedNonce?: string): IdTokenPayload {
+  static validateAndParseIdToken(
+    idToken: string,
+    expectedIssuer: string,
+    expectedAudience: string,
+    expectedNonce?: string,
+  ): IdTokenPayload {
     try {
       const { payload } = EnvironmentUtils.parseJwt(idToken);
 
@@ -202,7 +236,9 @@ export class OIDCUtils {
 
       return payload as IdTokenPayload;
     } catch (error) {
-      throw new Error(`ID token validation failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+      throw new Error(
+        `ID token validation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
     }
   }
 }

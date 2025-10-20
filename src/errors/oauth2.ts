@@ -8,7 +8,11 @@ export class OAuth2Error extends Error {
    * @param status - HTTP 상태 코드 (선택적)
    * @param code - OAuth2 에러 코드 (선택적)
    */
-  constructor(message: string, public status?: number, public code?: string) {
+  constructor(
+    message: string,
+    public status?: number,
+    public code?: string,
+  ) {
     super(message);
     this.name = "OAuth2Error";
   }

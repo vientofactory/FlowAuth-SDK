@@ -6,6 +6,14 @@
 export * from "./types/oauth2";
 export * from "./types/token";
 
+// OAuth2 응답 타입과 콜백 파라미터 타입 명시적 export
+export type {
+  OAuth2ResponseType,
+  OAuth2GrantType,
+  OAuth2TokenType,
+  OAuth2CallbackParams,
+} from "./types/oauth2";
+
 // 상수 export
 export * from "./constants/oauth2";
 

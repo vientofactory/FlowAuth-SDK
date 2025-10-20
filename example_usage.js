@@ -28,13 +28,16 @@ async function createSecureOIDCAuthorization() {
 
   try {
     // 보안 강화된 OIDC 인증 URL 생성 (PKCE, Nonce, State 자동 포함)
-    const { authUrl, codeVerifier, nonce } = await client.createSecureOIDCAuthorizeUrl([
-      OAuth2Scope.OPENID, // OIDC 필수 스코프
-      OAuth2Scope.PROFILE, // 프로필 정보 접근
-      OAuth2Scope.EMAIL, // 이메일 정보 접근
-    ]);
+    const { authUrl, codeVerifier, nonce } =
+      await client.createSecureOIDCAuthorizeUrl([
+        OAuth2Scope.OPENID, // OIDC 필수 스코프
+        OAuth2Scope.PROFILE, // 프로필 정보 접근
+        OAuth2Scope.EMAIL, // 이메일 정보 접근
+      ]);
     console.log("인증 URL:", authUrl);
-    console.log("브라우저에서 위 URL로 이동하여 인증을 완료한 후, 콜백 URL에서 코드를 복사하세요.");
+    console.log(
+      "브라우저에서 위 URL로 이동하여 인증을 완료한 후, 콜백 URL에서 코드를 복사하세요.",
+    );
 
     // Node.js 환경에서 사용자 입력 받기 (브라우저에서는 URL 파라미터에서 추출)
     const rl = createInterface({
@@ -42,7 +45,7 @@ async function createSecureOIDCAuthorization() {
       output: process.stdout,
     });
 
-    rl.question("Authorization Code를 입력하세요: ", async (code) => {
+    rl.question("Authorization Code를 입력하세요: ", async code => {
       try {
         // 코드 교환 및 토큰 획득
         const token = await client.exchangeCode(code, codeVerifier);
@@ -57,8 +60,14 @@ async function createSecureOIDCAuthorization() {
         console.log("사용자 프로필:", profile);
 
         // ID 토큰 검증 (Nonce를 사용한 재생 공격 방지)
-        const validateIdToken = await client.validateIdToken(token.id_token, nonce);
-        console.log("ID 토큰 검증 결과:", validateIdToken ? "유효함" : "유효하지 않음");
+        const validateIdToken = await client.validateIdToken(
+          token.id_token,
+          nonce,
+        );
+        console.log(
+          "ID 토큰 검증 결과:",
+          validateIdToken ? "유효함" : "유효하지 않음",
+        );
       } catch (e) {
         console.error("인증 과정 중 오류:", e.message);
       }
@@ -83,7 +92,11 @@ function createOIDCAuthorization() {
 
   try {
     // OIDC 인증 URL 생성
-    const authUrl = client.createOIDCAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE, OAuth2Scope.EMAIL]);
+    const authUrl = client.createOIDCAuthorizeUrl([
+      OAuth2Scope.OPENID,
+      OAuth2Scope.PROFILE,
+      OAuth2Scope.EMAIL,
+    ]);
     console.log("OIDC 인증 URL:", authUrl);
 
     const rl = createInterface({
@@ -91,7 +104,7 @@ function createOIDCAuthorization() {
       output: process.stdout,
     });
 
-    rl.question("Authorization Code를 입력하세요: ", async (code) => {
+    rl.question("Authorization Code를 입력하세요: ", async code => {
       try {
         const token = await client.exchangeCode(code);
         console.log("토큰 교환 결과:", token);
@@ -124,7 +137,11 @@ function createAuthorizeUrl() {
   });
 
   try {
-    const authUrl = client.createAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE, OAuth2Scope.EMAIL]);
+    const authUrl = client.createAuthorizeUrl([
+      OAuth2Scope.OPENID,
+      OAuth2Scope.PROFILE,
+      OAuth2Scope.EMAIL,
+    ]);
     console.log("OAuth2 인증 URL:", authUrl);
 
     const rl = createInterface({
@@ -132,7 +149,7 @@ function createAuthorizeUrl() {
       output: process.stdout,
     });
 
-    rl.question("Authorization Code를 입력하세요: ", async (code) => {
+    rl.question("Authorization Code를 입력하세요: ", async code => {
       try {
         const token = await client.exchangeCode(code);
         console.log("토큰 교환 결과:", token);
@@ -164,7 +181,11 @@ async function createSecureAuthorizeUrl() {
 
   try {
     // PKCE를 사용한 보안 강화 인증 URL 생성
-    const { authUrl, codeVerifier } = await client.createSecureAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE, OAuth2Scope.EMAIL]);
+    const { authUrl, codeVerifier } = await client.createSecureAuthorizeUrl([
+      OAuth2Scope.OPENID,
+      OAuth2Scope.PROFILE,
+      OAuth2Scope.EMAIL,
+    ]);
     console.log("보안 강화 인증 URL:", authUrl);
 
     const rl = createInterface({
@@ -172,7 +193,7 @@ async function createSecureAuthorizeUrl() {
       output: process.stdout,
     });
 
-    rl.question("Authorization Code를 입력하세요: ", async (code) => {
+    rl.question("Authorization Code를 입력하세요: ", async code => {
       try {
         const token = await client.exchangeCode(code, codeVerifier);
         console.log("토큰 교환 결과:", token);

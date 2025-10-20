@@ -1,10 +1,18 @@
-import { OAuth2ClientConfig, OIDCDiscoveryDocument, PKCECodes, IdTokenPayload, TokenStorage } from "../types/oauth2";
+import {
+  OAuth2ClientConfig,
+  OIDCDiscoveryDocument,
+  PKCECodes,
+  IdTokenPayload,
+  TokenStorage,
+  OAuth2ResponseType,
+  OAuth2CallbackParams,
+} from "../types/oauth2";
 import { TokenResponse, UserInfo, TokenData } from "../types/token";
 import { OAuth2Error } from "../errors/oauth2";
 import { EnvironmentUtils } from "../utils/environment";
 import { getDefaultStorage } from "../utils/storage";
 import { OIDCUtils } from "../utils/oidc";
-import { OAuth2Scope, DEFAULT_SCOPES, OAUTH2_CONSTANTS } from "../constants/oauth2";
+import { OAuth2Scope, OAUTH2_CONSTANTS } from "../constants/oauth2";
 
 export class FlowAuthClient {
   /** OAuth2 클라이언트 ID */
@@ -60,8 +68,15 @@ export class FlowAuthClient {
     this.storage = config.storage || getDefaultStorage();
     this.autoRefresh = config.autoRefresh !== false;
 
-    if (!this.clientId || !this.clientSecret || !this.redirectUri || !this.server) {
-      throw new Error("All parameters (server, clientId, clientSecret, redirectUri) are required.");
+    if (
+      !this.clientId ||
+      !this.clientSecret ||
+      !this.redirectUri ||
+      !this.server
+    ) {
+      throw new Error(
+        "All parameters (server, clientId, clientSecret, redirectUri) are required.",
+      );
     }
 
     // Load stored tokens
@@ -69,7 +84,7 @@ export class FlowAuthClient {
   }
 
   /**
-   * 인증 URL 생성
+   * 인증 URL 생성 (기본 - Authorization Code Grant)
    *
    * 사용자를 FlowAuth 인증 페이지로 리다이렉트하기 위한 URL을 생성합니다.
    * 생성된 URL로 사용자를 이동시키면 OAuth2 인증 플로우가 시작됩니다.
@@ -78,6 +93,7 @@ export class FlowAuthClient {
    * @param state - CSRF 방지를 위한 상태값 (권장)
    * @param pkce - PKCE 코드 챌린지 (보안 강화용, 권장)
    * @param nonce - OIDC nonce 값 (openid 스코프 사용 시 필수)
+   * @param responseType - OAuth2 응답 타입 (기본값: 'code', OIDC 스코프 포함 시 'code id_token')
    * @returns 완성된 인증 URL
    *
    * @example
@@ -90,17 +106,69 @@ export class FlowAuthClient {
    * const nonce = await FlowAuthClient.generateNonce();
    * const authUrl = client.createAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE], 'state', undefined, nonce);
    *
+   * // 명시적 response type 지정
+   * const authUrl = client.createAuthorizeUrl([OAuth2Scope.PROFILE], 'state', undefined, undefined, 'token');
+   *
    * // PKCE와 함께 사용
    * const pkce = await FlowAuthClient.generatePKCE();
    * const authUrl = client.createAuthorizeUrl([OAuth2Scope.PROFILE], 'state', pkce);
    * // pkce.codeVerifier를 안전하게 저장하여 토큰 교환 시 사용
    * ```
    */
-  createAuthorizeUrl(scopes: OAuth2Scope[] = [OAuth2Scope.PROFILE], state?: string, pkce?: PKCECodes, nonce?: string): string {
-    // OIDC를 사용하는 경우 response_type에 id_token 포함
-    const hasOpenId = scopes.includes(OAuth2Scope.OPENID);
-    const responseType = hasOpenId ? "code id_token" : "code";
+  createAuthorizeUrl(
+    scopes: OAuth2Scope[] = [OAuth2Scope.PROFILE],
+    state?: string,
+    pkce?: PKCECodes,
+    nonce?: string,
+    responseType?: OAuth2ResponseType,
+  ): string {
+    // responseType이 명시적으로 지정되지 않은 경우
+    if (!responseType) {
+      // OIDC를 사용하는 경우 response_type에 id_token 포함
+      const hasOpenId = scopes.includes(OAuth2Scope.OPENID);
+      responseType = hasOpenId
+        ? OAUTH2_CONSTANTS.RESPONSE_TYPES.CODE_ID_TOKEN
+        : OAUTH2_CONSTANTS.RESPONSE_TYPES.CODE;
+    }
 
+    return this.createAuthorizeUrlWithResponseType(
+      responseType,
+      scopes,
+      state,
+      pkce,
+      nonce,
+    );
+  }
+
+  /**
+   * 특정 response_type으로 인증 URL 생성
+   *
+   * @param responseType - OAuth2 응답 타입
+   * @param scopes - 요청할 권한 스코프 배열
+   * @param state - CSRF 방지를 위한 상태값
+   * @param pkce - PKCE 코드 챌린지
+   * @param nonce - OIDC nonce 값
+   * @returns 완성된 인증 URL
+   *
+   * @example
+   * ```typescript
+   * // Implicit Grant (Access Token만)
+   * const authUrl = client.createAuthorizeUrlWithResponseType('token', [OAuth2Scope.PROFILE], 'state123');
+   *
+   * // Implicit Grant (ID Token만)
+   * const authUrl = client.createAuthorizeUrlWithResponseType('id_token', [OAuth2Scope.OPENID], 'state123', undefined, 'nonce123');
+   *
+   * // Hybrid Flow
+   * const authUrl = client.createAuthorizeUrlWithResponseType('code id_token', [OAuth2Scope.OPENID, OAuth2Scope.PROFILE], 'state123');
+   * ```
+   */
+  createAuthorizeUrlWithResponseType(
+    responseType: OAuth2ResponseType,
+    scopes: OAuth2Scope[] = [OAuth2Scope.PROFILE],
+    state?: string,
+    pkce?: PKCECodes,
+    nonce?: string,
+  ): string {
     const params = new URLSearchParams({
       response_type: responseType,
       client_id: this.clientId,
@@ -142,28 +210,38 @@ export class FlowAuthClient {
    * }
    * ```
    */
-  async exchangeCode(code: string, codeVerifier?: string): Promise<TokenResponse> {
+  async exchangeCode(
+    code: string,
+    codeVerifier?: string,
+  ): Promise<TokenResponse> {
     const params = new URLSearchParams({
       grant_type: "authorization_code",
       client_id: this.clientId,
-      code: code,
+      code,
       redirect_uri: this.redirectUri,
     });
 
     if (codeVerifier) params.set("code_verifier", codeVerifier);
 
-    const response = await EnvironmentUtils.getFetch()(`${this.server}/oauth2/token`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Authorization: `Basic ${EnvironmentUtils.btoa(`${this.clientId}:${this.clientSecret}`)}`,
+    const response = await EnvironmentUtils.getFetch()(
+      `${this.server}/oauth2/token`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization: `Basic ${EnvironmentUtils.btoa(`${this.clientId}:${this.clientSecret}`)}`,
+        },
+        body: params.toString(),
       },
-      body: params.toString(),
-    });
+    );
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new OAuth2Error(`Token exchange failed: ${response.status} ${response.statusText}`, response.status, errorData.error);
+      throw new OAuth2Error(
+        `Token exchange failed: ${response.status} ${response.statusText}`,
+        response.status,
+        errorData.error,
+      );
     }
 
     const tokenResponse: TokenResponse = await response.json();
@@ -204,15 +282,22 @@ export class FlowAuthClient {
     await this.refreshTokenIfNeeded();
     token = this.getStoredAccessToken() || token;
 
-    const response = await EnvironmentUtils.getFetch()(`${this.server}/oauth2/userinfo`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
+    const response = await EnvironmentUtils.getFetch()(
+      `${this.server}/oauth2/userinfo`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       },
-    });
+    );
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new OAuth2Error(`User info request failed: ${response.status} ${response.statusText}`, response.status, errorData.error);
+      throw new OAuth2Error(
+        `User info request failed: ${response.status} ${response.statusText}`,
+        response.status,
+        errorData.error,
+      );
     }
 
     return response.json();
@@ -252,19 +337,26 @@ export class FlowAuthClient {
       refresh_token: token,
     });
 
-    const response = await EnvironmentUtils.getFetch()(`${this.server}/oauth2/token`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Authorization: `Basic ${EnvironmentUtils.btoa(`${this.clientId}:${this.clientSecret}`)}`,
+    const response = await EnvironmentUtils.getFetch()(
+      `${this.server}/oauth2/token`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization: `Basic ${EnvironmentUtils.btoa(`${this.clientId}:${this.clientSecret}`)}`,
+        },
+        body: params.toString(),
       },
-      body: params.toString(),
-    });
+    );
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       this.clearStoredTokens();
-      throw new OAuth2Error(`Token refresh failed: ${response.status} ${response.statusText}`, response.status, errorData.error);
+      throw new OAuth2Error(
+        `Token refresh failed: ${response.status} ${response.statusText}`,
+        response.status,
+        errorData.error,
+      );
     }
 
     const tokenResponse: TokenResponse = await response.json();
@@ -315,7 +407,10 @@ export class FlowAuthClient {
     }
 
     try {
-      this.storage.setItem(`flowauth_tokens_${this.clientId}`, JSON.stringify(this.tokenData));
+      this.storage.setItem(
+        `flowauth_tokens_${this.clientId}`,
+        JSON.stringify(this.tokenData),
+      );
     } catch (error) {
       console.warn("Failed to save tokens:", error);
     }
@@ -335,14 +430,22 @@ export class FlowAuthClient {
    * 토큰 만료 확인
    */
   private isTokenExpired(): boolean {
-    return !this.tokenData || !this.tokenData.expires_at || Date.now() >= this.tokenData.expires_at;
+    return (
+      !this.tokenData ||
+      !this.tokenData.expires_at ||
+      Date.now() >= this.tokenData.expires_at
+    );
   }
 
   /**
    * 자동 토큰 리프래시
    */
   private async refreshTokenIfNeeded(): Promise<void> {
-    if (!this.autoRefresh || !this.tokenData?.refresh_token || !this.isTokenExpired()) {
+    if (
+      !this.autoRefresh ||
+      !this.tokenData?.refresh_token ||
+      !this.isTokenExpired()
+    ) {
       return;
     }
 
@@ -388,21 +491,27 @@ export class FlowAuthClient {
   static async generatePKCE(): Promise<PKCECodes> {
     const crypto = EnvironmentUtils.getCrypto();
     if (!crypto) {
-      throw new Error("Crypto API is not available. Please use a browser environment or Node.js 15+ with crypto support.");
+      throw new Error(
+        "Crypto API is not available. Please use a browser environment or Node.js 15+ with crypto support.",
+      );
     }
 
     const array = new Uint8Array(32);
     crypto.getRandomValues(array);
-    const codeVerifier = EnvironmentUtils.btoa(String.fromCharCode(...array)).replace(
+    const codeVerifier = EnvironmentUtils.btoa(
+      String.fromCharCode(...array),
+    ).replace(
       /[+/=]/g,
-      (m: string) => ({ "+": "-", "/": "_", "=": "" }[m] || "")
+      (m: string) => ({ "+": "-", "/": "_", "=": "" })[m] || "",
     );
     const encoder = new TextEncoder();
     const data = encoder.encode(codeVerifier);
     const hash = await crypto.subtle.digest("SHA-256", data);
-    const codeChallenge = EnvironmentUtils.btoa(String.fromCharCode(...new Uint8Array(hash))).replace(
+    const codeChallenge = EnvironmentUtils.btoa(
+      String.fromCharCode(...new Uint8Array(hash)),
+    ).replace(
       /[+/=]/g,
-      (m: string) => ({ "+": "-", "/": "_", "=": "" }[m] || "")
+      (m: string) => ({ "+": "-", "/": "_", "=": "" })[m] || "",
     );
     return {
       codeVerifier,
@@ -436,12 +545,17 @@ export class FlowAuthClient {
   static async generateState(): Promise<string> {
     const crypto = EnvironmentUtils.getCrypto();
     if (!crypto) {
-      throw new Error("Crypto API is not available. Please use a browser environment or Node.js 15+ with crypto support.");
+      throw new Error(
+        "Crypto API is not available. Please use a browser environment or Node.js 15+ with crypto support.",
+      );
     }
 
     const array = new Uint8Array(32);
     crypto.getRandomValues(array);
-    const state = EnvironmentUtils.btoa(String.fromCharCode(...array)).replace(/[+/=]/g, (m: string) => ({ "+": "-", "/": "_", "=": "" }[m] || ""));
+    const state = EnvironmentUtils.btoa(String.fromCharCode(...array)).replace(
+      /[+/=]/g,
+      (m: string) => ({ "+": "-", "/": "_", "=": "" })[m] || "",
+    );
     return state;
   }
 
@@ -468,12 +582,17 @@ export class FlowAuthClient {
   static async generateNonce(): Promise<string> {
     const crypto = EnvironmentUtils.getCrypto();
     if (!crypto) {
-      throw new Error("Crypto API is not available. Please use a browser environment or Node.js 15+ with crypto support.");
+      throw new Error(
+        "Crypto API is not available. Please use a browser environment or Node.js 15+ with crypto support.",
+      );
     }
 
     const array = new Uint8Array(32);
     crypto.getRandomValues(array);
-    const nonce = EnvironmentUtils.btoa(String.fromCharCode(...array)).replace(/[+/=]/g, (m: string) => ({ "+": "-", "/": "_", "=": "" }[m] || ""));
+    const nonce = EnvironmentUtils.btoa(String.fromCharCode(...array)).replace(
+      /[+/=]/g,
+      (m: string) => ({ "+": "-", "/": "_", "=": "" })[m] || "",
+    );
     return nonce;
   }
 
@@ -497,8 +616,14 @@ export class FlowAuthClient {
    * const tokens = await client.exchangeCode('auth-code', authParams.pkce.codeVerifier);
    * ```
    */
-  static async generateSecureAuthParams(): Promise<{ pkce: PKCECodes; state: string }> {
-    const [pkce, state] = await Promise.all([this.generatePKCE(), this.generateState()]);
+  static async generateSecureAuthParams(): Promise<{
+    pkce: PKCECodes;
+    state: string;
+  }> {
+    const [pkce, state] = await Promise.all([
+      this.generatePKCE(),
+      this.generateState(),
+    ]);
 
     return {
       pkce: {
@@ -517,6 +642,7 @@ export class FlowAuthClient {
    * 이 메소드를 사용하면 별도로 PKCE 코드를 관리할 필요가 없습니다.
    *
    * @param scopes - 요청할 권한 스코프 배열 (기본값: [OAuth2Scope.PROFILE])
+   * @param responseType - OAuth2 응답 타입 (기본값: 'code', OIDC 스코프 포함 시 'code id_token')
    * @returns 인증 URL과 PKCE 코드 검증자를 포함한 객체
    * @throws {Error} Crypto API를 사용할 수 없는 환경에서 발생
    *
@@ -527,14 +653,26 @@ export class FlowAuthClient {
    * // 사용자를 인증 페이지로 리다이렉트
    * window.location.href = authUrl;
    *
+   * // 명시적 response type 지정
+   * const { authUrl, codeVerifier, state } = await client.createSecureAuthorizeUrl([OAuth2Scope.PROFILE], 'token');
+   *
    * // 콜백에서 토큰 교환 (codeVerifier와 state를 세션에 저장해두어야 함)
    * const tokens = await client.exchangeCode('auth-code', codeVerifier);
    * ```
    */
-  async createSecureAuthorizeUrl(scopes: OAuth2Scope[] = [OAuth2Scope.PROFILE]): Promise<{ authUrl: string; codeVerifier: string; state: string }> {
+  async createSecureAuthorizeUrl(
+    scopes: OAuth2Scope[] = [OAuth2Scope.PROFILE],
+    responseType?: OAuth2ResponseType,
+  ): Promise<{ authUrl: string; codeVerifier: string; state: string }> {
     const authParams = await FlowAuthClient.generateSecureAuthParams();
 
-    const authUrl = this.createAuthorizeUrl(scopes, authParams.state, authParams.pkce);
+    const authUrl = this.createAuthorizeUrl(
+      scopes,
+      authParams.state,
+      authParams.pkce,
+      undefined,
+      responseType,
+    );
 
     return {
       authUrl,
@@ -587,11 +725,14 @@ export class FlowAuthClient {
     if (!token) return false;
 
     try {
-      const response = await EnvironmentUtils.getFetch()(`${this.server}/oauth2/userinfo`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
+      const response = await EnvironmentUtils.getFetch()(
+        `${this.server}/oauth2/userinfo`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         },
-      });
+      );
       return response.ok;
     } catch {
       return false;
@@ -681,7 +822,10 @@ export class FlowAuthClient {
    * }
    * ```
    */
-  async validateIdToken(idToken?: string, expectedNonce?: string): Promise<IdTokenPayload> {
+  async validateIdToken(
+    idToken?: string,
+    expectedNonce?: string,
+  ): Promise<IdTokenPayload> {
     const token = idToken || this.idToken;
     if (!token) {
       throw new Error("No ID token available");
@@ -692,7 +836,13 @@ export class FlowAuthClient {
       throw new Error("JWKS URI not found in discovery document");
     }
 
-    return await OIDCUtils.validateAndParseIdTokenWithRsa(token, discovery.jwks_uri, discovery.issuer, this.clientId, expectedNonce || this.nonce);
+    return await OIDCUtils.validateAndParseIdTokenWithRsa(
+      token,
+      discovery.jwks_uri,
+      discovery.issuer,
+      this.clientId,
+      expectedNonce || this.nonce,
+    );
   }
 
   /**
@@ -715,6 +865,122 @@ export class FlowAuthClient {
   }
 
   /**
+   * Implicit Grant URL 생성 (Access Token only)
+   *
+   * Access Token만 받는 Implicit Grant 인증 URL을 생성합니다.
+   * 클라이언트 시크릿을 안전하게 저장할 수 없는 환경에 적합합니다.
+   *
+   * @deprecated 대신 createAuthorizeUrl(scopes, state, undefined, undefined, 'token')을 사용하세요
+   * @param scopes - 요청할 권한 스코프 배열
+   * @param state - CSRF 방지를 위한 상태값
+   * @returns 완성된 Implicit Grant 인증 URL
+   *
+   * @example
+   * ```typescript
+   * // Deprecated 방식
+   * const authUrl = client.createImplicitGrantUrl([OAuth2Scope.PROFILE], 'random-state');
+   *
+   * // 권장 방식
+   * const authUrl = client.createAuthorizeUrl([OAuth2Scope.PROFILE], 'random-state', undefined, undefined, 'token');
+   * window.location.href = authUrl;
+   * ```
+   */
+  createImplicitGrantUrl(
+    scopes: OAuth2Scope[] = [OAuth2Scope.PROFILE],
+    state?: string,
+  ): string {
+    return this.createAuthorizeUrl(
+      scopes,
+      state,
+      undefined,
+      undefined,
+      "token",
+    );
+  }
+
+  /**
+   * OIDC Implicit Grant URL 생성 (ID Token only)
+   *
+   * ID Token만 받는 OIDC Implicit Grant 인증 URL을 생성합니다.
+   * 인증 정보만 필요하고 리소스 접근이 불필요한 경우에 적합합니다.
+   *
+   * @deprecated 대신 createAuthorizeUrl 또는 createOIDCAuthorizeUrl에서 responseType을 'id_token'으로 지정하세요
+   * @param scopes - 요청할 권한 스코프 배열 (openid 스코프 포함 권장)
+   * @param state - CSRF 방지를 위한 상태값
+   * @param nonce - Replay Attack 방지를 위한 nonce 값 (필수)
+   * @returns 완성된 OIDC Implicit Grant 인증 URL
+   *
+   * @example
+   * ```typescript
+   * const nonce = await FlowAuthClient.generateNonce();
+   *
+   * // Deprecated 방식
+   * const authUrl = client.createOIDCImplicitUrl([OAuth2Scope.OPENID], 'state', nonce);
+   *
+   * // 권장 방식
+   * const authUrl = client.createOIDCAuthorizeUrl([OAuth2Scope.OPENID], 'state', nonce, undefined, 'id_token');
+   * window.location.href = authUrl;
+   * ```
+   */
+  createOIDCImplicitUrl(
+    scopes: OAuth2Scope[] = [OAuth2Scope.OPENID],
+    state?: string,
+    nonce?: string,
+  ): string {
+    return this.createOIDCAuthorizeUrl(
+      scopes,
+      state,
+      nonce,
+      undefined,
+      "id_token",
+    );
+  }
+
+  /**
+   * OIDC Implicit Grant URL 생성 (Access Token + ID Token)
+   *
+   * Access Token과 ID Token을 동시에 받는 OIDC Implicit Grant 인증 URL을 생성합니다.
+   * 리소스 접근과 인증 정보가 모두 필요한 SPA에 적합합니다.
+   *
+   * @deprecated 대신 createOIDCAuthorizeUrl에서 responseType을 'token id_token'으로 지정하세요
+   * @param scopes - 요청할 권한 스코프 배열 (openid 스코프 포함 권장)
+   * @param state - CSRF 방지를 위한 상태값
+   * @param nonce - Replay Attack 방지를 위한 nonce 값 (필수)
+   * @returns 완성된 OIDC Implicit Grant 인증 URL
+   *
+   * @example
+   * ```typescript
+   * const nonce = await FlowAuthClient.generateNonce();
+   *
+   * // Deprecated 방식
+   * const authUrl = client.createOIDCImplicitTokenUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE], 'state', nonce);
+   *
+   * // 권장 방식
+   * const authUrl = client.createOIDCAuthorizeUrl(
+   *   [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
+   *   'state',
+   *   nonce,
+   *   undefined,
+   *   'token id_token'
+   * );
+   * window.location.href = authUrl;
+   * ```
+   */
+  createOIDCImplicitTokenUrl(
+    scopes: OAuth2Scope[] = [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
+    state?: string,
+    nonce?: string,
+  ): string {
+    return this.createOIDCAuthorizeUrl(
+      scopes,
+      state,
+      nonce,
+      undefined,
+      "token id_token",
+    );
+  }
+
+  /**
    * OIDC 인증 URL 생성 (ID 토큰 포함)
    *
    * OpenID Connect를 위한 인증 URL을 생성합니다.
@@ -724,6 +990,7 @@ export class FlowAuthClient {
    * @param state - CSRF 방지를 위한 상태값
    * @param nonce - Replay Attack 방지를 위한 nonce 값
    * @param pkce - PKCE 코드 챌린지
+   * @param responseType - OAuth2 응답 타입 (기본값: 'code id_token')
    * @returns 완성된 OIDC 인증 URL
    *
    * @example
@@ -735,20 +1002,40 @@ export class FlowAuthClient {
    *   nonce
    * );
    * window.location.href = authUrl;
+   *
+   * // 명시적 response type 지정
+   * const authUrl = client.createOIDCAuthorizeUrl(
+   *   [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
+   *   'state',
+   *   nonce,
+   *   undefined,
+   *   'id_token'
+   * );
    * ```
    */
   createOIDCAuthorizeUrl(
     scopes: OAuth2Scope[] = [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
     state?: string,
     nonce?: string,
-    pkce?: PKCECodes
+    pkce?: PKCECodes,
+    responseType?: OAuth2ResponseType,
   ): string {
     // openid 스코프가 포함되어 있지 않으면 추가
     if (!scopes.includes(OAuth2Scope.OPENID)) {
       scopes = [OAuth2Scope.OPENID, ...scopes];
     }
 
-    return this.createAuthorizeUrl(scopes, state, pkce, nonce);
+    // responseType이 지정되지 않은 경우 OIDC 기본값 사용
+    const finalResponseType =
+      responseType || OAUTH2_CONSTANTS.RESPONSE_TYPES.CODE_ID_TOKEN;
+
+    return this.createAuthorizeUrl(
+      scopes,
+      state,
+      pkce,
+      nonce,
+      finalResponseType,
+    );
   }
 
   /**
@@ -758,6 +1045,7 @@ export class FlowAuthClient {
    * Hybrid Flow는 Authorization Code와 ID Token을 동시에 받아서 보안성과 사용자 경험을 모두 제공합니다.
    *
    * @param scopes - 요청할 권한 스코프 배열 (openid 스코프 포함 권장)
+   * @param responseType - OAuth2 응답 타입 (기본값: 'code id_token')
    * @returns 인증 URL과 보안 파라미터들을 포함한 객체
    * @throws {Error} Crypto API를 사용할 수 없는 환경에서 발생
    *
@@ -771,6 +1059,12 @@ export class FlowAuthClient {
    *
    * // 사용자를 인증 페이지로 리다이렉트
    * window.location.href = authUrl;
+   *
+   * // 명시적 response type 지정
+   * const { authUrl, codeVerifier, state, nonce } = await client.createSecureOIDCAuthorizeUrl(
+   *   [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
+   *   'id_token'
+   * );
    *
    * // 콜백에서 검증에 사용할 파라미터들 저장
    * sessionStorage.setItem('oauth_state', state);
@@ -787,13 +1081,28 @@ export class FlowAuthClient {
    * ```
    */
   async createSecureOIDCAuthorizeUrl(
-    scopes: OAuth2Scope[] = [OAuth2Scope.OPENID, OAuth2Scope.PROFILE]
-  ): Promise<{ authUrl: string; codeVerifier: string; state: string; nonce: string }> {
-    const [pkce, state] = await Promise.all([FlowAuthClient.generatePKCE(), FlowAuthClient.generateState()]);
+    scopes: OAuth2Scope[] = [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
+    responseType?: OAuth2ResponseType,
+  ): Promise<{
+    authUrl: string;
+    codeVerifier: string;
+    state: string;
+    nonce: string;
+  }> {
+    const [pkce, state] = await Promise.all([
+      FlowAuthClient.generatePKCE(),
+      FlowAuthClient.generateState(),
+    ]);
 
     const nonce = await FlowAuthClient.generateNonce();
 
-    const authUrl = this.createOIDCAuthorizeUrl(scopes, state, nonce, pkce);
+    const authUrl = this.createOIDCAuthorizeUrl(
+      scopes,
+      state,
+      nonce,
+      pkce,
+      responseType,
+    );
 
     return {
       authUrl,
@@ -823,16 +1132,7 @@ export class FlowAuthClient {
    * const params = client.parseCallbackUrl(window.location.href);
    * ```
    */
-  parseCallbackUrl(callbackUrl: string): {
-    code?: string;
-    state?: string;
-    idToken?: string;
-    accessToken?: string;
-    tokenType?: string;
-    expiresIn?: number;
-    error?: string;
-    errorDescription?: string;
-  } {
+  parseCallbackUrl(callbackUrl: string): OAuth2CallbackParams {
     const url = new URL(callbackUrl);
 
     // Query parameters 파싱
@@ -909,7 +1209,12 @@ export class FlowAuthClient {
    * }
    * ```
    */
-  async handleHybridCallback(callbackUrl: string, expectedState?: string, expectedNonce?: string, codeVerifier?: string): Promise<TokenResponse> {
+  async handleHybridCallback(
+    callbackUrl: string,
+    expectedState?: string,
+    expectedNonce?: string,
+    codeVerifier?: string,
+  ): Promise<TokenResponse> {
     const params = this.parseCallbackUrl(callbackUrl);
 
     // 에러 처리
@@ -917,7 +1222,7 @@ export class FlowAuthClient {
       throw new OAuth2Error(
         `OAuth2 callback error: ${params.error}${params.errorDescription ? ` - ${params.errorDescription}` : ""}`,
         undefined,
-        params.error
+        params.error,
       );
     }
 
@@ -955,6 +1260,8 @@ export class FlowAuthClient {
       return tokenResponse;
     }
 
-    throw new OAuth2Error("No authorization code or access token found in callback");
+    throw new OAuth2Error(
+      "No authorization code or access token found in callback",
+    );
   }
 }
