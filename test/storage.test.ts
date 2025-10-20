@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { MemoryStorage, FileStorage, getDefaultStorage } from "../src/utils/storage";
+import {
+  MemoryStorage,
+  FileStorage,
+  getDefaultStorage,
+} from "../src/utils/storage";
 import { EnvironmentUtils } from "../src/utils/environment";
 import * as fs from "fs";
 import * as path from "path";
@@ -43,7 +47,10 @@ describe("Storage Implementations", () => {
     });
 
     it("should handle complex values", () => {
-      const complexValue = JSON.stringify({ token: "abc123", expires: 1234567890 });
+      const complexValue = JSON.stringify({
+        token: "abc123",
+        expires: 1234567890,
+      });
       storage.setItem("complex", complexValue);
       expect(storage.getItem("complex")).toBe(complexValue);
     });
@@ -201,7 +208,7 @@ describe("Storage Implementations", () => {
         clientId: "test-client",
         clientSecret: "test-secret",
         redirectUri: "https://example.com/callback",
-        storage: storage,
+        storage,
       });
 
       // Verify storage is properly integrated by testing token operations
@@ -265,7 +272,9 @@ describe("Storage Implementations", () => {
         });
       } catch (error) {
         // If it throws, we can't test further, so skip this test
-        console.warn("Client creation failed due to storage error, skipping test");
+        console.warn(
+          "Client creation failed due to storage error, skipping test",
+        );
         return;
       }
 

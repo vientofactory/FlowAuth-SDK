@@ -68,6 +68,7 @@ export interface IdTokenPayload {
   /** 권한 부여자 */
   azp?: string;
   /** 추가 클레임들 */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
 }
 
@@ -92,6 +93,28 @@ export interface JWKSKey {
  */
 export interface JWKSResponse {
   keys: JWKSKey[];
+}
+
+/**
+ * OAuth2 콜백 파라미터 인터페이스
+ */
+export interface OAuth2CallbackParams {
+  /** Authorization Code (Authorization Code Grant) */
+  code?: string;
+  /** State 파라미터 (CSRF 방지) */
+  state?: string;
+  /** ID Token (OIDC) */
+  idToken?: string;
+  /** Access Token (Implicit Grant) */
+  accessToken?: string;
+  /** Token Type */
+  tokenType?: string;
+  /** Token 만료 시간 (초) */
+  expiresIn?: number;
+  /** 에러 코드 */
+  error?: string;
+  /** 에러 설명 */
+  errorDescription?: string;
 }
 
 /**
