@@ -13,7 +13,7 @@ export class MemoryStorage implements TokenStorage {
   private data: Map<string, string> = new Map();
 
   getItem(key: string): string | null {
-    return this.data.get(key) || null;
+    return this.data.get(key) ?? null;
   }
 
   setItem(key: string, value: string): void {
@@ -83,7 +83,7 @@ export class FileStorage implements TokenStorage {
   }
 
   getItem(key: string): string | null {
-    return this.data.get(key) || null;
+    return this.data.get(key) ?? null;
   }
 
   setItem(key: string, value: string): void {
