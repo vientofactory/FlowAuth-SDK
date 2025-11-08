@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
-import { FlowAuthClient, OAuth2Scope, OAUTH2_CONSTANTS } from "../src";
+import {
+  FlowAuthClient,
+  OAuth2Scope,
+  OAuth2ResponseType,
+  OAUTH2_CONSTANTS,
+} from "../src";
 
 describe("FlowAuthClient", () => {
   const client = new FlowAuthClient({
@@ -12,9 +17,9 @@ describe("FlowAuthClient", () => {
   it("should create authorize URL", () => {
     const url = client.createAuthorizeUrl(
       [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
-      "state123",
+      { state: "state123" },
     );
-    expect(url).toContain("response_type=code");
+    expect(url).toContain("response_type=code+id_token");
     expect(url).toContain("client_id=client-id");
     expect(url).toContain("redirect_uri=https%3A%2F%2Fexample.com%2Fcallback");
     expect(url).toContain("scope=openid+profile");
@@ -49,10 +54,9 @@ describe("FlowAuthClient", () => {
     const pkce = await FlowAuthClient.generatePKCE();
     const url = client.createAuthorizeUrl(
       [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
-      "state123",
-      pkce,
+      { state: "state123", pkce },
     );
-    expect(url).toContain("response_type=code");
+    expect(url).toContain("response_type=code+id_token");
     expect(url).toContain("client_id=client-id");
     expect(url).toContain("redirect_uri=https%3A%2F%2Fexample.com%2Fcallback");
     expect(url).toContain("scope=openid+profile");
@@ -269,13 +273,13 @@ describe("FlowAuthClient", () => {
     ).rejects.toThrow("No authorization code or access token found");
   });
 
-  // 새로운 response_type 관련 테스트들
+  // Response Type 테스트들
   describe("Response Type Methods", () => {
     it("should create Implicit Grant URL (token only)", () => {
-      const url = client.createImplicitGrantUrl(
-        [OAuth2Scope.PROFILE],
-        "state123",
-      );
+      const url = client.createAuthorizeUrl([OAuth2Scope.PROFILE], {
+        state: "state123",
+        responseType: OAuth2ResponseType.TOKEN,
+      });
       expect(url).toContain("response_type=token");
       expect(url).toContain("client_id=client-id");
       expect(url).toContain(
@@ -286,11 +290,11 @@ describe("FlowAuthClient", () => {
     });
 
     it("should create OIDC Implicit URL (id_token only)", () => {
-      const url = client.createOIDCImplicitUrl(
-        [OAuth2Scope.OPENID],
-        "state123",
-        "nonce123",
-      );
+      const url = client.createAuthorizeUrl([OAuth2Scope.OPENID], {
+        state: "state123",
+        nonce: "nonce123",
+        responseType: OAuth2ResponseType.ID_TOKEN,
+      });
       expect(url).toContain("response_type=id_token");
       expect(url).toContain("scope=openid");
       expect(url).toContain("state=state123");
@@ -298,10 +302,13 @@ describe("FlowAuthClient", () => {
     });
 
     it("should create OIDC Implicit Token URL (token + id_token)", () => {
-      const url = client.createOIDCImplicitTokenUrl(
+      const url = client.createAuthorizeUrl(
         [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
-        "state123",
-        "nonce123",
+        {
+          state: "state123",
+          nonce: "nonce123",
+          responseType: OAuth2ResponseType.TOKEN_ID_TOKEN,
+        },
       );
       expect(url).toContain("response_type=token+id_token");
       expect(url).toContain("scope=openid+profile");
@@ -311,7 +318,7 @@ describe("FlowAuthClient", () => {
 
     it("should create authorize URL with custom response type", () => {
       const url = client.createAuthorizeUrlWithResponseType(
-        "code",
+        OAuth2ResponseType.CODE,
         [OAuth2Scope.PROFILE],
         "state123",
       );
@@ -321,17 +328,21 @@ describe("FlowAuthClient", () => {
     });
 
     it("should automatically add openid scope for OIDC methods", () => {
-      const url1 = client.createOIDCImplicitUrl(
+      const url1 = client.createOIDCAuthorizeUrl(
         [OAuth2Scope.PROFILE],
         "state123",
         "nonce123",
+        undefined,
+        OAuth2ResponseType.ID_TOKEN,
       );
       expect(url1).toContain("scope=openid+profile");
 
-      const url2 = client.createOIDCImplicitTokenUrl(
+      const url2 = client.createOIDCAuthorizeUrl(
         [OAuth2Scope.EMAIL],
         "state123",
         "nonce123",
+        undefined,
+        OAuth2ResponseType.TOKEN_ID_TOKEN,
       );
       expect(url2).toContain("scope=openid+email");
     });
@@ -372,13 +383,10 @@ describe("FlowAuthClient", () => {
     });
 
     it("should create authorize URL with explicit response type", () => {
-      const url = client.createAuthorizeUrl(
-        [OAuth2Scope.PROFILE],
-        "state123",
-        undefined,
-        undefined,
-        "token",
-      );
+      const url = client.createAuthorizeUrl([OAuth2Scope.PROFILE], {
+        state: "state123",
+        responseType: OAuth2ResponseType.TOKEN,
+      });
       expect(url).toContain("response_type=token");
       expect(url).toContain("scope=profile");
     });
@@ -389,7 +397,7 @@ describe("FlowAuthClient", () => {
         "state123",
         "nonce123",
         undefined,
-        "id_token",
+        OAuth2ResponseType.ID_TOKEN,
       );
       expect(url).toContain("response_type=id_token");
       expect(url).toContain("scope=openid+profile");
@@ -399,7 +407,7 @@ describe("FlowAuthClient", () => {
     it("should create secure authorize URL with explicit response type", async () => {
       const result = await client.createSecureAuthorizeUrl(
         [OAuth2Scope.PROFILE],
-        "token",
+        OAuth2ResponseType.TOKEN,
       );
       expect(result.authUrl).toContain("response_type=token");
       expect(result.authUrl).toContain("scope=profile");
@@ -410,7 +418,7 @@ describe("FlowAuthClient", () => {
     it("should create secure OIDC authorize URL with explicit response type", async () => {
       const result = await client.createSecureOIDCAuthorizeUrl(
         [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
-        "id_token",
+        OAuth2ResponseType.ID_TOKEN,
       );
       expect(result.authUrl).toContain("response_type=id_token");
       expect(result.authUrl).toContain("scope=openid+profile");
@@ -420,7 +428,9 @@ describe("FlowAuthClient", () => {
     });
 
     it("should use default response type when not specified", () => {
-      const url = client.createAuthorizeUrl([OAuth2Scope.PROFILE], "state123");
+      const url = client.createAuthorizeUrl([OAuth2Scope.PROFILE], {
+        state: "state123",
+      });
       expect(url).toContain("response_type=code");
     });
 
