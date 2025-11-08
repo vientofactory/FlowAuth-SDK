@@ -113,9 +113,7 @@ export class OIDCUtils {
 
       // 개발 환경 토큰은 검증 건너뛰기 (HMAC 서명)
       if (header.alg === "HS256") {
-        console.log(
-          "Development environment token detected, skipping RSA validation",
-        );
+        // Development environment token detected, skipping RSA validation
         return payload as IdTokenPayload;
       }
 
@@ -144,10 +142,22 @@ export class OIDCUtils {
       if (EnvironmentUtils.isNode()) {
         // Node.js 환경: Buffer 사용
         const signatureBase64 = signature.replace(/-/g, "+").replace(/_/g, "/");
-        const buffer = (globalThis as any).Buffer.from(
-          signatureBase64,
-          "base64",
-        );
+        const globalWithBuffer = globalThis as {
+          Buffer?: {
+            from: (
+              input: string,
+              encoding: string,
+            ) => {
+              buffer: ArrayBuffer;
+              byteOffset: number;
+              byteLength: number;
+            };
+          };
+        };
+        const buffer = globalWithBuffer.Buffer?.from(signatureBase64, "base64");
+        if (!buffer) {
+          throw new Error("Buffer is not available in Node.js environment");
+        }
         signatureBytes = buffer.buffer.slice(
           buffer.byteOffset,
           buffer.byteOffset + buffer.byteLength,

@@ -29,7 +29,7 @@ export interface UserInfo {
   /** 사용자 이름 (선택적) */
   username?: string;
   /** 추가 사용자 정보 (확장 가능) */
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /**

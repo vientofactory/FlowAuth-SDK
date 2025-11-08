@@ -20,7 +20,7 @@ export class EnvironmentUtils {
   static isNode(): boolean {
     return (
       typeof globalThis !== "undefined" &&
-      typeof (globalThis as any).process !== "undefined"
+      typeof (globalThis as Record<string, unknown>).process !== "undefined"
     );
   }
 
@@ -43,15 +43,20 @@ export class EnvironmentUtils {
           return globalThis.crypto;
         }
         // 구버전 Node.js에서는 crypto 모듈 import
-        const nodeCrypto = (globalThis as any).require?.("crypto");
+        const globalWithRequire = globalThis as {
+          require?: (module: string) => unknown;
+        };
+        const nodeCrypto = globalWithRequire.require?.("crypto") as {
+          webcrypto?: Crypto;
+        };
         if (nodeCrypto?.webcrypto) {
-          return nodeCrypto.webcrypto as Crypto;
+          return nodeCrypto.webcrypto;
         }
         // crypto가 없는 환경에서는 에러 대신 null 반환 (테스트 환경 등)
-        return null as any;
-      } catch (error) {
+        return null as unknown as Crypto;
+      } catch {
         // crypto가 없는 환경에서는 null 반환
-        return null as any;
+        return null as unknown as Crypto;
       }
     }
     throw new Error("Crypto API is not available in this environment");
@@ -68,7 +73,15 @@ export class EnvironmentUtils {
       return window.btoa(input);
     } else if (this.isNode()) {
       // Node.js Buffer 사용
-      const Buffer = (globalThis as any).Buffer;
+      const globalWithBuffer = globalThis as {
+        Buffer?: {
+          from: (
+            input: string,
+            encoding: string,
+          ) => { toString: (format: string) => string };
+        };
+      };
+      const Buffer = globalWithBuffer.Buffer;
       if (Buffer) {
         return Buffer.from(input, "binary").toString("base64");
       }
@@ -110,7 +123,12 @@ export class EnvironmentUtils {
         return globalThis.fetch;
       }
       // node-fetch 등의 polyfill이 필요할 수 있음
-      const nodeFetch = (globalThis as any).require?.("node-fetch");
+      const globalWithRequire = globalThis as {
+        require?: (module: string) => unknown;
+      };
+      const nodeFetch = globalWithRequire.require?.(
+        "node-fetch",
+      ) as typeof fetch;
       if (nodeFetch) {
         return nodeFetch;
       }
@@ -129,8 +147,8 @@ export class EnvironmentUtils {
    * @returns 헤더, 페이로드, 서명
    */
   static parseJwt(token: string): {
-    header: any;
-    payload: any;
+    header: Record<string, unknown>;
+    payload: Record<string, unknown>;
     signature: string;
   } {
     const parts = token.split(".");
@@ -158,7 +176,7 @@ export class EnvironmentUtils {
     try {
       const { payload } = this.parseJwt(token);
       const currentTime = Math.floor(Date.now() / 1000);
-      return payload.exp < currentTime;
+      return typeof payload.exp === "number" && payload.exp < currentTime;
     } catch {
       return true; // 파싱 실패 시 만료된 것으로 간주
     }
@@ -173,7 +191,12 @@ export class EnvironmentUtils {
     if (this.isBrowser()) {
       return window.atob(input.replace(/-/g, "+").replace(/_/g, "/"));
     } else if (this.isNode()) {
-      const Buffer = (globalThis as any).Buffer;
+      const globalWithBuffer = globalThis as {
+        Buffer?: {
+          from: (input: string, encoding: string) => { toString: () => string };
+        };
+      };
+      const Buffer = globalWithBuffer.Buffer;
       if (Buffer) {
         return Buffer.from(
           input.replace(/-/g, "+").replace(/_/g, "/"),

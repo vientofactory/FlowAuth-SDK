@@ -382,7 +382,7 @@ export class FlowAuthClient {
           this.clearStoredTokens();
         }
       }
-    } catch (error) {
+    } catch {
       // Silently handle storage errors during initialization
       // This prevents client creation from failing due to storage issues
     }
@@ -414,8 +414,9 @@ export class FlowAuthClient {
         `flowauth_tokens_${this.clientId}`,
         JSON.stringify(this.tokenData),
       );
-    } catch (error) {
-      console.warn("Failed to save tokens:", error);
+    } catch {
+      // Silently handle storage errors during token saving
+      // This prevents token saving from failing due to storage issues
     }
   }
 
@@ -463,7 +464,7 @@ export class FlowAuthClient {
       const newTokens = await this.refreshPromise;
       this.saveTokens(newTokens);
     } catch (error) {
-      console.error("Auto refresh failed:", error);
+      // Clear tokens on refresh failure and re-throw
       this.clearStoredTokens();
       throw error;
     } finally {
@@ -1239,9 +1240,9 @@ export class FlowAuthClient {
       try {
         await this.validateIdToken(params.idToken, expectedNonce);
         this.idToken = params.idToken;
-      } catch (error) {
-        console.warn("ID token validation failed:", error);
+      } catch {
         // ID token 검증 실패해도 계속 진행 (선택적)
+        // Silently handle ID token validation errors
       }
     }
 

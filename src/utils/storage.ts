@@ -13,7 +13,7 @@ export class MemoryStorage implements TokenStorage {
   private data: Map<string, string> = new Map();
 
   getItem(key: string): string | null {
-    return this.data.get(key) || null;
+    return this.data.get(key) ?? null;
   }
 
   setItem(key: string, value: string): void {
@@ -36,7 +36,11 @@ export class MemoryStorage implements TokenStorage {
 export class FileStorage implements TokenStorage {
   private filePath: string;
   private data: Map<string, string> = new Map();
-  private fs: any = null;
+  private fs: {
+    readFileSync: (path: string, encoding: string) => string;
+    writeFileSync: (path: string, data: string) => void;
+    existsSync: (path: string) => boolean;
+  } | null = null;
 
   constructor(filePath: string = "./.flowauth-tokens.json") {
     this.filePath = filePath;
@@ -48,11 +52,9 @@ export class FileStorage implements TokenStorage {
     if (EnvironmentUtils.isNode()) {
       try {
         this.fs = require("fs");
-      } catch (error) {
+      } catch {
         // fs 모듈을 사용할 수 없는 환경
-        console.warn(
-          "FileStorage: fs module not available, falling back to memory storage",
-        );
+        // Silently fall back to memory storage
       }
     }
   }
@@ -66,8 +68,8 @@ export class FileStorage implements TokenStorage {
         const parsed = JSON.parse(content);
         this.data = new Map(Object.entries(parsed));
       }
-    } catch (error) {
-      console.warn("Failed to load tokens from file:", error);
+    } catch {
+      // Silently handle file loading errors
     }
   }
 
@@ -77,13 +79,13 @@ export class FileStorage implements TokenStorage {
     try {
       const obj = Object.fromEntries(this.data);
       this.fs.writeFileSync(this.filePath, JSON.stringify(obj, null, 2));
-    } catch (error) {
-      console.warn("Failed to save tokens to file:", error);
+    } catch {
+      // Silently handle file saving errors
     }
   }
 
   getItem(key: string): string | null {
-    return this.data.get(key) || null;
+    return this.data.get(key) ?? null;
   }
 
   setItem(key: string, value: string): void {

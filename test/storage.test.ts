@@ -71,7 +71,7 @@ describe("Storage Implementations", () => {
         if (fs.existsSync(testFilePath)) {
           fs.unlinkSync(testFilePath);
         }
-      } catch (error) {
+      } catch {
         // Ignore cleanup errors
       }
     });
@@ -137,7 +137,7 @@ describe("Storage Implementations", () => {
         try {
           fs.chmodSync(tempDir, 0o755);
           fs.rmSync(tempDir, { recursive: true, force: true });
-        } catch (cleanupError) {
+        } catch {
           // Ignore cleanup errors
         }
       }
@@ -270,7 +270,7 @@ describe("Storage Implementations", () => {
           redirectUri: "https://example.com/callback",
           storage: failingStorage as any,
         });
-      } catch (error) {
+      } catch {
         // If it throws, we can't test further, so skip this test
         console.warn(
           "Client creation failed due to storage error, skipping test",
