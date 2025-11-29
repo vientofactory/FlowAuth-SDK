@@ -103,14 +103,6 @@ export interface OAuth2CallbackParams {
   code?: string;
   /** State 파라미터 (CSRF 방지) */
   state?: string;
-  /** ID Token (OIDC) */
-  idToken?: string;
-  /** Access Token (Implicit Grant) */
-  accessToken?: string;
-  /** Token Type */
-  tokenType?: string;
-  /** Token 만료 시간 (초) */
-  expiresIn?: number;
   /** 에러 코드 */
   error?: string;
   /** 에러 설명 */
