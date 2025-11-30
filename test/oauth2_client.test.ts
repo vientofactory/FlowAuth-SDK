@@ -236,9 +236,6 @@ describe("FlowAuthClient", () => {
       expect(OAUTH2_CONSTANTS.SUPPORTED_RESPONSE_TYPES).toContain(
         "code id_token",
       );
-      expect(OAUTH2_CONSTANTS.SUPPORTED_RESPONSE_TYPES).toContain(
-        "token id_token",
-      );
     });
   });
 
@@ -253,9 +250,9 @@ describe("FlowAuthClient", () => {
     it("should create authorize URL with explicit response type", () => {
       const url = client.createAuthorizeUrl([OAuth2Scope.PROFILE], {
         state: "state123",
-        responseType: OAuth2ResponseType.TOKEN,
+        responseType: OAuth2ResponseType.CODE,
       });
-      expect(url).toContain("response_type=token");
+      expect(url).toContain("response_type=code");
       expect(url).toContain("scope=profile");
     });
 
@@ -275,9 +272,9 @@ describe("FlowAuthClient", () => {
     it("should create secure authorize URL with explicit response type", async () => {
       const result = await client.createSecureAuthorizeUrl(
         [OAuth2Scope.PROFILE],
-        OAuth2ResponseType.TOKEN,
+        OAuth2ResponseType.CODE,
       );
-      expect(result.authUrl).toContain("response_type=token");
+      expect(result.authUrl).toContain("response_type=code");
       expect(result.authUrl).toContain("scope=profile");
       expect(result.codeVerifier).toBeDefined();
       expect(result.state).toBeDefined();
