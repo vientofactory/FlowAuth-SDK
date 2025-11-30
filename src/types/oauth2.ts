@@ -107,8 +107,6 @@ export interface OAuth2CallbackParams {
   error?: string;
   /** 에러 설명 */
   errorDescription?: string;
-  /** ID Token (OIDC) */
-  idToken?: string;
 }
 
 /**

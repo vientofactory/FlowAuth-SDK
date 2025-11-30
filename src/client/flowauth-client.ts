@@ -128,24 +128,9 @@ export class FlowAuthClient {
   ): string {
     const { state, pkce, nonce, responseType } = options || {};
 
-    // OIDC 스코프가 포함되거나 nonce가 제공되면 openid 스코프 자동 추가
-    let finalScopes = scopes;
-    if (nonce || scopes.includes(OAuth2Scope.OPENID)) {
-      finalScopes = scopes.includes(OAuth2Scope.OPENID)
-        ? scopes
-        : [OAuth2Scope.OPENID, ...scopes];
-    }
-
-    // OIDC 스코프가 포함된 경우 기본 responseType을 'code id_token'으로 설정
-    let finalResponseType: string =
-      responseType || OAUTH2_CONSTANTS.RESPONSE_TYPES.CODE;
-    if (finalScopes.includes(OAuth2Scope.OPENID) && !responseType) {
-      finalResponseType = `${OAUTH2_CONSTANTS.RESPONSE_TYPES.CODE} ${OAUTH2_CONSTANTS.RESPONSE_TYPES.ID_TOKEN}`;
-    }
-
     return this.createAuthorizeUrlWithResponseType(
-      finalResponseType,
-      finalScopes,
+      responseType || OAUTH2_CONSTANTS.RESPONSE_TYPES.CODE,
+      scopes,
       state,
       pkce,
       nonce,
@@ -184,40 +169,6 @@ export class FlowAuthClient {
   }
 
   /**
-   * OIDC 인증 URL 생성
-   *
-   * OpenID Connect를 위한 인증 URL을 생성합니다.
-   * 자동으로 openid 스코프를 추가하고 적절한 responseType을 설정합니다.
-   *
-   * @param scopes - 요청할 권한 스코프 배열 (openid가 자동으로 추가됩니다)
-   * @param state - CSRF 방지를 위한 상태값
-   * @param nonce - OIDC nonce 값
-   * @param pkce - PKCE 코드 챌린지 (보안 강화용)
-   * @param responseType - OAuth2 응답 타입 (기본값: code id_token)
-   * @returns 완성된 OIDC 인증 URL
-   */
-  createOIDCAuthorizeUrl(
-    scopes: OAuth2Scope[],
-    state: string,
-    nonce: string,
-    pkce?: PKCECodes,
-    responseType: string = `${OAUTH2_CONSTANTS.RESPONSE_TYPES.CODE} ${OAUTH2_CONSTANTS.RESPONSE_TYPES.ID_TOKEN}`,
-  ): string {
-    // openid 스코프가 없으면 추가
-    const oidcScopes = scopes.includes(OAuth2Scope.OPENID)
-      ? scopes
-      : [OAuth2Scope.OPENID, ...scopes];
-
-    return this.createAuthorizeUrlWithResponseType(
-      responseType,
-      oidcScopes,
-      state,
-      pkce,
-      nonce,
-    );
-  }
-
-  /**
    * 보안 강화된 인증 URL 생성
    *
    * 자동으로 PKCE와 state를 생성하여 보안이 강화된 인증 URL을 생성합니다.
@@ -246,46 +197,6 @@ export class FlowAuthClient {
       authUrl,
       codeVerifier: secureParams.pkce.codeVerifier,
       state: secureParams.state,
-    };
-  }
-
-  /**
-   * 보안 강화된 OIDC 인증 URL 생성
-   *
-   * 자동으로 PKCE, state, nonce를 생성하고 openid 스코프를 추가하여 보안이 강화된 OIDC 인증 URL을 생성합니다.
-   *
-   * @param scopes - 요청할 권한 스코프 배열 (openid가 자동으로 추가됩니다)
-   * @returns 인증 URL과 보안 파라미터들
-   */
-  async createSecureOIDCAuthorizeUrl(
-    scopes: OAuth2Scope[] = [OAuth2Scope.PROFILE],
-  ): Promise<{
-    authUrl: string;
-    codeVerifier: string;
-    state: string;
-    nonce: string;
-  }> {
-    const authParams = await FlowAuthClient.generateSecureAuthParams();
-    const nonce = await FlowAuthClient.generateNonce();
-
-    // openid 스코프가 없으면 추가
-    const oidcScopes = scopes.includes(OAuth2Scope.OPENID)
-      ? scopes
-      : [OAuth2Scope.OPENID, ...scopes];
-
-    const authUrl = this.createAuthorizeUrlWithResponseType(
-      `${OAUTH2_CONSTANTS.RESPONSE_TYPES.CODE} ${OAUTH2_CONSTANTS.RESPONSE_TYPES.ID_TOKEN}`,
-      oidcScopes,
-      authParams.state,
-      authParams.pkce,
-      nonce,
-    );
-
-    return {
-      authUrl,
-      codeVerifier: authParams.pkce.codeVerifier,
-      state: authParams.state,
-      nonce,
     };
   }
 
@@ -365,56 +276,13 @@ export class FlowAuthClient {
     const state = params.get("state") || undefined;
     const error = params.get("error") || undefined;
     const errorDescription = params.get("error_description") || undefined;
-    const idToken = params.get("id_token") || undefined;
 
     return {
       code,
       state,
       error,
       errorDescription,
-      idToken,
     };
-  }
-
-  /**
-   * 하이브리드 콜백 처리
-   *
-   * OIDC 하이브리드 플로우에서 code와 id_token을 동시에 처리합니다.
-   *
-   * @param callbackUrl - 콜백 URL
-   * @param expectedState - 예상되는 state 값
-   * @param codeVerifier - PKCE 코드 검증자
-   * @returns 토큰 응답
-   */
-  async handleHybridCallback(
-    callbackUrl: string,
-    expectedState: string,
-    codeVerifier?: string,
-  ): Promise<TokenResponse> {
-    const params = this.parseCallbackUrl(callbackUrl);
-
-    if (params.error) {
-      throw new OAuth2Error(
-        params.errorDescription || params.error,
-        400,
-        params.error,
-      );
-    }
-
-    if (params.state !== expectedState) {
-      throw new OAuth2Error("Invalid state parameter", 400, "invalid_state");
-    }
-
-    if (!params.code) {
-      throw new OAuth2Error(
-        "No authorization code in callback",
-        400,
-        "no_code",
-      );
-    }
-
-    // code를 사용하여 토큰 교환
-    return this.exchangeCode(params.code, codeVerifier);
   }
 
   /**

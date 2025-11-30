@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
   FlowAuthClient,
   OAuth2Scope,
@@ -15,14 +15,13 @@ describe("FlowAuthClient", () => {
   });
 
   it("should create authorize URL", () => {
-    const url = client.createAuthorizeUrl(
-      [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
-      { state: "state123" },
-    );
-    expect(url).toContain("response_type=code+id_token");
+    const url = client.createAuthorizeUrl([OAuth2Scope.PROFILE], {
+      state: "state123",
+    });
+    expect(url).toContain("response_type=code");
     expect(url).toContain("client_id=client-id");
     expect(url).toContain("redirect_uri=https%3A%2F%2Fexample.com%2Fcallback");
-    expect(url).toContain("scope=openid+profile");
+    expect(url).toContain("scope=profile");
     expect(url).toContain("state=state123");
   });
 
@@ -52,14 +51,14 @@ describe("FlowAuthClient", () => {
 
   it("should create authorize URL with PKCE", async () => {
     const pkce = await FlowAuthClient.generatePKCE();
-    const url = client.createAuthorizeUrl(
-      [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
-      { state: "state123", pkce },
-    );
-    expect(url).toContain("response_type=code+id_token");
+    const url = client.createAuthorizeUrl([OAuth2Scope.PROFILE], {
+      state: "state123",
+      pkce,
+    });
+    expect(url).toContain("response_type=code");
     expect(url).toContain("client_id=client-id");
     expect(url).toContain("redirect_uri=https%3A%2F%2Fexample.com%2Fcallback");
-    expect(url).toContain("scope=openid+profile");
+    expect(url).toContain("scope=profile");
     expect(url).toContain("state=state123");
     expect(url).toContain("code_challenge=");
     expect(url).toContain("code_challenge_method=S256");
@@ -67,10 +66,7 @@ describe("FlowAuthClient", () => {
   });
 
   it("should create secure authorize URL", async () => {
-    const result = await client.createSecureAuthorizeUrl([
-      OAuth2Scope.OPENID,
-      OAuth2Scope.PROFILE,
-    ]);
+    const result = await client.createSecureAuthorizeUrl([OAuth2Scope.PROFILE]);
     expect(result).toHaveProperty("authUrl");
     expect(result).toHaveProperty("codeVerifier");
     expect(result).toHaveProperty("state");
@@ -120,27 +116,7 @@ describe("FlowAuthClient", () => {
       state: "state123",
       nonce: "nonce123",
     });
-    expect(url).toContain("scope=openid+profile");
-  });
-
-  it("should create secure OIDC authorize URL", async () => {
-    const result = await client.createSecureOIDCAuthorizeUrl([
-      OAuth2Scope.PROFILE,
-    ]);
-    expect(result).toHaveProperty("authUrl");
-    expect(result).toHaveProperty("codeVerifier");
-    expect(result).toHaveProperty("state");
-    expect(result).toHaveProperty("nonce");
-    expect(typeof result.authUrl).toBe("string");
-    expect(typeof result.codeVerifier).toBe("string");
-    expect(typeof result.state).toBe("string");
-    expect(typeof result.nonce).toBe("string");
-    expect(result.authUrl).toContain("response_type=code+id_token");
-    expect(result.authUrl).toContain("scope=openid+profile");
-    expect(result.authUrl).toContain("nonce=");
-    expect(result.authUrl).toContain("code_challenge=");
-    expect(result.authUrl).toContain("code_challenge_method=S256");
-    expect(result.authUrl).toContain("state=");
+    expect(url).toContain("scope=profile");
   });
 
   it("should parse callback URL", () => {
@@ -157,57 +133,6 @@ describe("FlowAuthClient", () => {
     expect(errorParams.error).toBe("access_denied");
     expect(errorParams.errorDescription).toBe("User denied");
     expect(errorParams.state).toBe("xyz");
-  });
-
-  it("should handle hybrid callback with authorization code", async () => {
-    // Mock fetch for token exchange
-    const mockResponse = {
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          access_token: "access123",
-          token_type: "Bearer",
-          expires_in: 3600,
-          refresh_token: "refresh123",
-          id_token: "idtoken123",
-        }),
-    } as Response;
-
-    const mockFetch = vi.fn(() => Promise.resolve(mockResponse));
-
-    // Temporarily replace fetch
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = mockFetch;
-
-    try {
-      const callbackUrl =
-        "https://example.com/callback?code=authcode123&state=teststate";
-      const result = await client.handleHybridCallback(
-        callbackUrl,
-        "teststate",
-        undefined,
-        "codeverifier123",
-      );
-
-      expect(result).toHaveProperty("access_token", "access123");
-      expect(result).toHaveProperty("token_type", "Bearer");
-      expect(result).toHaveProperty("expires_in", 3600);
-      expect(result).toHaveProperty("refresh_token", "refresh123");
-      expect(result).toHaveProperty("id_token", "idtoken123");
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        "https://example.com/oauth2/token",
-        expect.objectContaining({
-          method: "POST",
-          headers: expect.objectContaining({
-            "Content-Type": "application/x-www-form-urlencoded",
-          }),
-          body: expect.stringContaining("grant_type=authorization_code"),
-        }),
-      );
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
   });
 
   it("should reject callback with invalid state", async () => {
@@ -232,10 +157,7 @@ describe("FlowAuthClient", () => {
 
     it("should have supported response types array", () => {
       expect(OAUTH2_CONSTANTS.SUPPORTED_RESPONSE_TYPES).toContain("code");
-      expect(OAUTH2_CONSTANTS.SUPPORTED_RESPONSE_TYPES).toContain("id_token");
-      expect(OAUTH2_CONSTANTS.SUPPORTED_RESPONSE_TYPES).toContain(
-        "code id_token",
-      );
+      expect(OAUTH2_CONSTANTS.SUPPORTED_RESPONSE_TYPES).toHaveLength(1);
     });
   });
 
@@ -256,19 +178,6 @@ describe("FlowAuthClient", () => {
       expect(url).toContain("scope=profile");
     });
 
-    it("should create OIDC authorize URL with explicit response type", () => {
-      const url = client.createOIDCAuthorizeUrl(
-        [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
-        "state123",
-        "nonce123",
-        undefined,
-        OAuth2ResponseType.ID_TOKEN,
-      );
-      expect(url).toContain("response_type=id_token");
-      expect(url).toContain("scope=openid+profile");
-      expect(url).toContain("nonce=nonce123");
-    });
-
     it("should create secure authorize URL with explicit response type", async () => {
       const result = await client.createSecureAuthorizeUrl(
         [OAuth2Scope.PROFILE],
@@ -285,15 +194,6 @@ describe("FlowAuthClient", () => {
         state: "state123",
       });
       expect(url).toContain("response_type=code");
-    });
-
-    it("should use OIDC default response type when not specified", () => {
-      const url = client.createOIDCAuthorizeUrl(
-        [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
-        "state123",
-        "nonce123",
-      );
-      expect(url).toContain("response_type=code+id_token");
     });
   });
 });
