@@ -1,15 +1,14 @@
-# FlowAuth OAuth2/OIDC SDK
+# FlowAuth OAuth2 SDK
 
-FlowAuth와의 OAuth2 및 OpenID Connect 통합을 위한 간단한 TypeScript/JavaScript SDK입니다.
+FlowAuth와의 OAuth2 Authorization Code Grant 통합을 위한 간단한 TypeScript/JavaScript SDK입니다.
 
 ## 특징
 
 - OAuth2 Authorization Code Grant 플로우 지원
-- **OpenID Connect 1.0 완전 지원** (ID 토큰, UserInfo 엔드포인트)
 - PKCE (Proof Key for Code Exchange) 지원
 - 자동 토큰 리프래시
 - 토큰 저장 및 관리 (브라우저 sessionStorage/localStorage)
-- **TypeScript OIDC 스코프 enum 제공** (타입 안전한 권한 관리)
+- TypeScript OAuth2 스코프 enum 제공 (타입 안전한 권한 관리)
 - 브라우저 및 Node.js 환경 지원
 - 강화된 에러 처리 (OAuth2Error 클래스)
 
@@ -81,24 +80,6 @@ const authUrl = client.createAuthorizeUrl(
   OAuth2ResponseType.CODE
 );
 
-// Implicit Flow
-const implicitUrl = client.createAuthorizeUrl(
-  [OAuth2Scope.OPENID, OAuth2Scope.EMAIL],
-  state,
-  undefined,
-  undefined,
-  OAuth2ResponseType.TOKEN
-);
-
-// Hybrid Flow
-const hybridUrl = client.createAuthorizeUrl(
-  [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
-  state,
-  undefined,
-  undefined,
-  OAuth2ResponseType.CODE_ID_TOKEN
-);
-
 console.log("인증 URL:", authUrl);
 // 사용자를 authUrl로 리다이렉트
 
@@ -136,7 +117,7 @@ const client = new FlowAuthClient({
 
 // 런타임 상수 사용
 console.log("지원되는 응답 타입들:", OAuth2ResponseTypes);
-// 출력: { CODE: "code", TOKEN: "token", ID_TOKEN: "id_token", ... }
+// 출력: { CODE: "code" }
 
 console.log("지원되는 Grant 타입들:", OAuth2GrantTypes);
 // 출력: { AUTHORIZATION_CODE: "authorization_code", REFRESH_TOKEN: "refresh_token", ... }
@@ -148,15 +129,6 @@ const authUrl = client.createAuthorizeUrl(
   pkce,
 );
 
-// Implicit Flow
-const implicitUrl = client.createAuthorizeUrl(
-  [OAuth2Scope.OPENID, OAuth2Scope.EMAIL],
-  state,
-  undefined,
-  undefined,
-  OAuth2ResponseTypes.TOKEN, // "token"
-);
-
 // 콜백 처리
 function handleCallback(callbackParams) {
   // Authorization Code 처리
@@ -165,14 +137,6 @@ function handleCallback(callbackParams) {
       .exchangeCode(callbackParams.code)
       .then(tokens => console.log("토큰 받음:", tokens))
       .catch(error => console.error("토큰 교환 실패:", error));
-  }
-
-  // Implicit Grant 토큰 처리
-  if (
-    callbackParams.access_token &&
-    callbackParams.token_type === OAuth2TokenTypes.BEARER
-  ) {
-    console.log("Bearer 토큰 받음:", callbackParams.access_token);
   }
 
   // 에러 처리
@@ -203,7 +167,7 @@ const client = new FlowAuthClient({
 
 // 1. State 생성 및 인증 URL 생성
 const state = await FlowAuthClient.generateState();
-// OIDC를 사용하려면 OPENID 스코프 포함 권장
+// 권장 스코프 사용
 const authUrl = client.createAuthorizeUrl(
   [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
   state,
@@ -248,7 +212,11 @@ client.logout();
 // 방법 1: 개별 생성 및 수동 관리
 const pkce = await FlowAuthClient.generatePKCE();
 const state = await FlowAuthClient.generateState();
-const authUrl = client.createAuthorizeUrl([OAuth2Scope.OPENID], state, pkce);
+const authUrl = client.createAuthorizeUrl(
+  [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
+  state,
+  pkce,
+);
 const tokens = await client.exchangeCode(
   "authorization-code",
   pkce.codeVerifier,
@@ -257,7 +225,7 @@ const tokens = await client.exchangeCode(
 // 방법 2: PKCE와 State를 함께 생성 (편의 메소드)
 const authParams = await FlowAuthClient.generateSecureAuthParams();
 const authUrl = client.createAuthorizeUrl(
-  [OAuth2Scope.OPENID],
+  [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
   authParams.state,
   authParams.pkce,
 );
@@ -275,86 +243,6 @@ const { authUrl, codeVerifier, state } = await client.createSecureAuthorizeUrl([
 // authUrl로 사용자를 리다이렉트하고, codeVerifier와 state를 세션에 저장
 // 콜백에서:
 const tokens = await client.exchangeCode("authorization-code", codeVerifier);
-```
-
-### OIDC Hybrid Flow 사용 예제
-
-Hybrid Flow는 Authorization Code와 ID Token을 동시에 받아서 보안성과 사용자 경험을 모두 향상시킵니다:
-
-```javascript
-const { FlowAuthClient, OAuth2Scope } = require("flowauth-oauth2-client");
-
-const client = new FlowAuthClient({
-  server: "https://your-flowauth-server.com",
-  clientId: "your-client-id",
-  clientSecret: "your-client-secret",
-  redirectUri: "https://your-app.com/callback",
-});
-
-// 방법 1: 수동 Hybrid Flow 구현
-const pkce = await FlowAuthClient.generatePKCE();
-const state = await FlowAuthClient.generateState();
-const nonce = await FlowAuthClient.generateNonce();
-
-const authUrl = client.createAuthorizeUrl(
-  [OAuth2Scope.OPENID, OAuth2Scope.PROFILE, OAuth2Scope.EMAIL],
-  state,
-  pkce,
-  nonce,
-);
-
-// 세션에 파라미터 저장
-sessionStorage.setItem("oauth_code_verifier", pkce.codeVerifier);
-sessionStorage.setItem("oauth_state", state);
-sessionStorage.setItem("oauth_nonce", nonce);
-
-// 사용자를 authUrl로 리다이렉트
-window.location.href = authUrl;
-
-// 콜백에서 Hybrid Flow 처리
-const callbackUrl = window.location.href;
-const expectedState = sessionStorage.getItem("oauth_state");
-const expectedNonce = sessionStorage.getItem("oauth_nonce");
-const codeVerifier = sessionStorage.getItem("oauth_code_verifier");
-
-try {
-  const tokens = await client.handleHybridCallback(
-    callbackUrl,
-    expectedState,
-    expectedNonce,
-    codeVerifier,
-  );
-
-  console.log("Access Token:", tokens.access_token);
-  console.log("ID Token:", tokens.id_token);
-  console.log("Refresh Token:", tokens.refresh_token);
-} catch (error) {
-  console.error("Hybrid callback failed:", error.message);
-}
-
-// 방법 2: 자동화된 Hybrid Flow (가장 간단)
-const { authUrl, codeVerifier, state, nonce } =
-  await client.createSecureOIDCAuthorizeUrl([
-    OAuth2Scope.OPENID,
-    OAuth2Scope.PROFILE,
-    OAuth2Scope.EMAIL,
-  ]);
-
-// 세션에 파라미터 저장
-sessionStorage.setItem("oauth_code_verifier", codeVerifier);
-sessionStorage.setItem("oauth_state", state);
-sessionStorage.setItem("oauth_nonce", nonce);
-
-// 사용자를 authUrl로 리다이렉트
-window.location.href = authUrl;
-
-// 콜백에서 동일한 처리
-const tokens = await client.handleHybridCallback(
-  window.location.href,
-  sessionStorage.getItem("oauth_state"),
-  sessionStorage.getItem("oauth_nonce"),
-  sessionStorage.getItem("oauth_code_verifier"),
-);
 ```
 
 ### 스코프 활용 예제
@@ -649,9 +537,9 @@ npm test
 
 ## API 문서
 
-### OAuth2/OIDC 스코프
+### OAuth2 스코프
 
-SDK는 다음과 같은 OAuth2 및 OpenID Connect 스코프들을 enum으로 제공합니다:
+SDK는 다음과 같은 OAuth2 스코프들을 enum으로 제공합니다:
 
 ```typescript
 enum OAuth2Scope {
@@ -661,7 +549,7 @@ enum OAuth2Scope {
 }
 ```
 
-**기본 스코프 (OIDC 권장):**
+**기본 스코프:**
 
 ```typescript
 const DEFAULT_SCOPES = [OAuth2Scope.OPENID, OAuth2Scope.PROFILE];
@@ -688,10 +576,7 @@ new FlowAuthClient(config: OAuth2ClientConfig)
 
 - `createAuthorizeUrl(scopes?, state?, pkce?, nonce?, responseType?)`: 인증 URL 생성 (기본값: `[OAuth2Scope.PROFILE]`)
 - `createSecureAuthorizeUrl(scopes?, responseType?)`: PKCE와 State를 자동 생성하여 보안 인증 URL 생성 (기본값: `[OAuth2Scope.PROFILE]`)
-- `createOIDCAuthorizeUrl(scopes?, state?, nonce?, pkce?, responseType?)`: OIDC 인증 URL 생성 (기본값: `[OAuth2Scope.OPENID, OAuth2Scope.PROFILE]`)
-- `createSecureOIDCAuthorizeUrl(scopes?, responseType?)`: OIDC 보안 인증 URL 생성 (기본값: `[OAuth2Scope.OPENID, OAuth2Scope.PROFILE]`)
 - `exchangeCode(code, codeVerifier?)`: Authorization Code를 토큰으로 교환
-- `getUserInfo(accessToken?)`: 사용자 정보 조회 (저장된 토큰 자동 사용)
 - `refreshToken(refreshToken?)`: 토큰 리프래시 (저장된 토큰 자동 사용)
 - `validateToken(accessToken?)`: 토큰 유효성 검증
 - `getStoredAccessToken()`: 저장된 액세스 토큰 조회
@@ -702,7 +587,6 @@ new FlowAuthClient(config: OAuth2ClientConfig)
 
 - `FlowAuthClient.generatePKCE()`: PKCE 챌린지 생성
 - `FlowAuthClient.generateState()`: OAuth2 State 파라미터 생성
-- `FlowAuthClient.generateNonce()`: OIDC Nonce 파라미터 생성
 - `FlowAuthClient.generateSecureAuthParams()`: PKCE와 State를 함께 생성
 
 ### 스토리지 클래스

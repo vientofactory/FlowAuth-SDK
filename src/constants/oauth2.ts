@@ -17,14 +17,6 @@ export enum OAuth2Scope {
 export enum OAuth2ResponseType {
   /** Authorization Code */
   CODE = "code",
-  /** Access Token (Implicit Grant) */
-  TOKEN = "token",
-  /** ID Token (OIDC) */
-  ID_TOKEN = "id_token",
-  /** Authorization Code + ID Token (Hybrid Flow) */
-  CODE_ID_TOKEN = "code id_token",
-  /** Access Token + ID Token (Hybrid Flow) */
-  TOKEN_ID_TOKEN = "token id_token",
 }
 
 /**
@@ -53,10 +45,6 @@ export enum OAuth2TokenType {
  */
 export const OAuth2ResponseTypes = {
   CODE: OAuth2ResponseType.CODE,
-  TOKEN: OAuth2ResponseType.TOKEN,
-  ID_TOKEN: OAuth2ResponseType.ID_TOKEN,
-  CODE_ID_TOKEN: OAuth2ResponseType.CODE_ID_TOKEN,
-  TOKEN_ID_TOKEN: OAuth2ResponseType.TOKEN_ID_TOKEN,
 } as const;
 
 /**
@@ -91,13 +79,7 @@ export const DEFAULT_SCOPES: OAuth2Scope[] = [
  */
 export const OAUTH2_CONSTANTS = {
   /** 지원되는 응답 타입들 */
-  SUPPORTED_RESPONSE_TYPES: [
-    OAuth2ResponseType.CODE,
-    OAuth2ResponseType.TOKEN,
-    OAuth2ResponseType.ID_TOKEN,
-    OAuth2ResponseType.CODE_ID_TOKEN,
-    OAuth2ResponseType.TOKEN_ID_TOKEN,
-  ] as const,
+  SUPPORTED_RESPONSE_TYPES: [OAuth2ResponseType.CODE] as const,
   /** 지원되는 Grant 타입들 */
   SUPPORTED_GRANT_TYPES: [
     OAuth2GrantType.AUTHORIZATION_CODE,

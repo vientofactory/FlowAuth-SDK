@@ -114,10 +114,7 @@ export class FlowAuthClient {
    * });
    *
    * // Implicit Grant (명시적 responseType 지정)
-   * const authUrl = client.createAuthorizeUrl([OAuth2Scope.PROFILE], {
-   *   state: 'state-123',
-   *   responseType: OAuth2ResponseType.TOKEN
-   * });
+   * // 제거됨: 보안상의 이유로 Implicit Grant는 더 이상 지원되지 않습니다.
    * ```
    */
   createAuthorizeUrl(
@@ -131,17 +128,8 @@ export class FlowAuthClient {
   ): string {
     const { state, pkce, nonce, responseType } = options || {};
 
-    // responseType이 명시적으로 지정되지 않은 경우 스코프에 따라 자동 결정
-    let finalResponseType = responseType;
-    if (!finalResponseType) {
-      const hasOpenId = scopes.includes(OAuth2Scope.OPENID);
-      finalResponseType = hasOpenId
-        ? OAUTH2_CONSTANTS.RESPONSE_TYPES.CODE_ID_TOKEN
-        : OAUTH2_CONSTANTS.RESPONSE_TYPES.CODE;
-    }
-
     return this.createAuthorizeUrlWithResponseType(
-      finalResponseType,
+      responseType || OAUTH2_CONSTANTS.RESPONSE_TYPES.CODE,
       scopes,
       state,
       pkce,
@@ -154,7 +142,7 @@ export class FlowAuthClient {
    * @internal 일반적으로 createAuthorizeUrl을 사용하는 것이 권장됩니다.
    */
   createAuthorizeUrlWithResponseType(
-    responseType: OAuth2ResponseType,
+    responseType: string,
     scopes: OAuth2Scope[] = [OAuth2Scope.PROFILE],
     state?: string,
     pkce?: PKCECodes,
@@ -178,6 +166,38 @@ export class FlowAuthClient {
     }
 
     return `${this.server}/oauth2/authorize?${params.toString()}`;
+  }
+
+  /**
+   * 보안 강화된 인증 URL 생성
+   *
+   * 자동으로 PKCE와 state를 생성하여 보안이 강화된 인증 URL을 생성합니다.
+   *
+   * @param scopes - 요청할 권한 스코프 배열
+   * @param responseType - OAuth2 응답 타입 (기본값: code)
+   * @returns 인증 URL과 보안 파라미터들
+   */
+  async createSecureAuthorizeUrl(
+    scopes: OAuth2Scope[] = [OAuth2Scope.PROFILE],
+    responseType: string = OAUTH2_CONSTANTS.RESPONSE_TYPES.CODE,
+  ): Promise<{
+    authUrl: string;
+    codeVerifier: string;
+    state: string;
+  }> {
+    const secureParams = await FlowAuthClient.generateSecureAuthParams();
+    const authUrl = this.createAuthorizeUrlWithResponseType(
+      responseType,
+      scopes,
+      secureParams.state,
+      secureParams.pkce,
+    );
+
+    return {
+      authUrl,
+      codeVerifier: secureParams.pkce.codeVerifier,
+      state: secureParams.state,
+    };
   }
 
   /**
@@ -238,6 +258,31 @@ export class FlowAuthClient {
     const tokenResponse: TokenResponse = await response.json();
     this.saveTokens(tokenResponse);
     return tokenResponse;
+  }
+
+  /**
+   * 콜백 URL 파싱
+   *
+   * 인증 후 리다이렉트된 URL에서 파라미터를 추출합니다.
+   *
+   * @param callbackUrl - 콜백 URL
+   * @returns 파싱된 콜백 파라미터들
+   */
+  parseCallbackUrl(callbackUrl: string): OAuth2CallbackParams {
+    const url = new URL(callbackUrl);
+    const params = new URLSearchParams(url.search);
+
+    const code = params.get("code") || undefined;
+    const state = params.get("state") || undefined;
+    const error = params.get("error") || undefined;
+    const errorDescription = params.get("error_description") || undefined;
+
+    return {
+      code,
+      state,
+      error,
+      errorDescription,
+    };
   }
 
   /**
@@ -562,59 +607,6 @@ export class FlowAuthClient {
   }
 
   /**
-   * 보안 인증 URL 생성
-   *
-   * PKCE, State, 그리고 OIDC 사용 시 Nonce를 자동으로 생성하여 보안이 강화된 인증 URL을 생성합니다.
-   * 이 메소드를 사용하면 별도로 보안 파라미터들을 관리할 필요가 없습니다.
-   *
-   * @param scopes - 요청할 권한 스코프 배열 (기본값: [OAuth2Scope.PROFILE])
-   * @param responseType - OAuth2 응답 타입 (미지정시 스코프에 따라 자동 결정)
-   * @returns 인증 URL과 보안 파라미터들을 포함한 객체
-   * @throws {Error} Crypto API를 사용할 수 없는 환경에서 발생
-   *
-   * @example
-   * ```typescript
-   * // 기본 OAuth2 (Authorization Code + PKCE)
-   * const { authUrl, codeVerifier, state } = await client.createSecureAuthorizeUrl([OAuth2Scope.PROFILE]);
-   *
-   * // OIDC (자동으로 nonce도 생성됨)
-   * const { authUrl, codeVerifier, state, nonce } = await client.createSecureAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE]);
-   *
-   * // 사용자를 인증 페이지로 리다이렉트
-   * window.location.href = authUrl;
-   * ```
-   */
-  async createSecureAuthorizeUrl(
-    scopes: OAuth2Scope[] = [OAuth2Scope.PROFILE],
-    responseType?: OAuth2ResponseType,
-  ): Promise<{
-    authUrl: string;
-    codeVerifier: string;
-    state: string;
-    nonce?: string;
-  }> {
-    const authParams = await FlowAuthClient.generateSecureAuthParams();
-
-    // OIDC 스코프가 있으면 nonce도 생성
-    const hasOpenId = scopes.includes(OAuth2Scope.OPENID);
-    const nonce = hasOpenId ? await FlowAuthClient.generateNonce() : undefined;
-
-    const authUrl = this.createAuthorizeUrl(scopes, {
-      state: authParams.state,
-      pkce: authParams.pkce,
-      nonce,
-      responseType,
-    });
-
-    return {
-      authUrl,
-      codeVerifier: authParams.pkce.codeVerifier,
-      state: authParams.state,
-      ...(nonce && { nonce }),
-    };
-  }
-
-  /**
    * 저장된 액세스 토큰 가져오기
    *
    * 브라우저 스토리지에 저장된 액세스 토큰을 반환합니다.
@@ -798,149 +790,13 @@ export class FlowAuthClient {
   }
 
   /**
-   * OIDC 인증 URL 생성
+   * Authorization Code Grant 콜백 처리
    *
-   * @deprecated 대신 createAuthorizeUrl을 사용하세요. OIDC 스코프를 자동으로 감지합니다.
-   * @param scopes - 권한 스코프 배열 (openid 스코프가 없으면 자동 추가)
-   * @param state - CSRF 방지를 위한 상태값
-   * @param nonce - OIDC nonce 값
-   * @param pkce - PKCE 코드 챌린지
-   * @param responseType - 응답 타입 (기본: 'code id_token')
-   */
-  createOIDCAuthorizeUrl(
-    scopes: OAuth2Scope[] = [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
-    state?: string,
-    nonce?: string,
-    pkce?: PKCECodes,
-    responseType?: OAuth2ResponseType,
-  ): string {
-    // openid 스코프가 포함되어 있지 않으면 추가
-    if (!scopes.includes(OAuth2Scope.OPENID)) {
-      scopes = [OAuth2Scope.OPENID, ...scopes];
-    }
-
-    return this.createAuthorizeUrl(scopes, {
-      state,
-      nonce,
-      pkce,
-      responseType:
-        responseType || OAUTH2_CONSTANTS.RESPONSE_TYPES.CODE_ID_TOKEN,
-    });
-  }
-
-  /**
-   * OIDC 보안 인증 URL 생성
-   *
-   * @deprecated 대신 createSecureAuthorizeUrl을 사용하세요. 이제 OIDC 스코프를 자동으로 감지합니다.
-   * @param scopes - 요청할 권한 스코프 배열
-   * @param responseType - OAuth2 응답 타입
-   * @returns 인증 URL과 보안 파라미터들을 포함한 객체
-   *
-   * @example
-   * ```typescript
-   * // Deprecated 방식
-   * const result = await client.createSecureOIDCAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE]);
-   *
-   * // 권장 방식
-   * const result = await client.createSecureAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE]);
-   * ```
-   */
-  async createSecureOIDCAuthorizeUrl(
-    scopes: OAuth2Scope[] = [OAuth2Scope.OPENID, OAuth2Scope.PROFILE],
-    responseType?: OAuth2ResponseType,
-  ): Promise<{
-    authUrl: string;
-    codeVerifier: string;
-    state: string;
-    nonce: string;
-  }> {
-    // OIDC 메소드이므로 OPENID 스코프가 없으면 추가
-    if (!scopes.includes(OAuth2Scope.OPENID)) {
-      scopes = [OAuth2Scope.OPENID, ...scopes];
-    }
-
-    const result = await this.createSecureAuthorizeUrl(scopes, responseType);
-    return {
-      ...result,
-      nonce: result.nonce || (await FlowAuthClient.generateNonce()),
-    };
-  }
-
-  /**
-   * 콜백 URL 파싱 유틸리티
-   *
-   * OAuth2 콜백 URL에서 파라미터들을 파싱합니다.
-   * Authorization Code Grant, Implicit Grant, Hybrid Flow 모두 지원합니다.
-   *
-   * @param callbackUrl - 콜백 URL (전체 URL 또는 query string + hash)
-   * @returns 파싱된 콜백 파라미터들
-   *
-   * @example
-   * ```typescript
-   * // 전체 URL에서 파싱
-   * const params = client.parseCallbackUrl('https://app.com/callback?code=abc&state=xyz#id_token=token');
-   * console.log(params.code); // 'abc'
-   * console.log(params.idToken); // 'token'
-   *
-   * // 현재 페이지 URL에서 파싱
-   * const params = client.parseCallbackUrl(window.location.href);
-   * ```
-   */
-  parseCallbackUrl(callbackUrl: string): OAuth2CallbackParams {
-    const url = new URL(callbackUrl);
-
-    // Query parameters 파싱
-    const code = url.searchParams.get("code");
-    const state = url.searchParams.get("state");
-    const error = url.searchParams.get("error");
-    const errorDescription = url.searchParams.get("error_description");
-
-    // Fragment parameters 파싱 (수정됨)
-    const hash = url.hash.substring(1); // # 제거
-    if (hash) {
-      const hashParams = new URLSearchParams(hash);
-      const idToken = hashParams.get("id_token");
-      const accessToken = hashParams.get("access_token");
-      const tokenType = hashParams.get("token_type");
-      const expiresIn = hashParams.get("expires_in");
-      const fragmentState = hashParams.get("state"); // fragment에서도 state 파싱
-
-      // state는 query나 fragment 중 하나만 사용 (query 우선)
-      const finalState = state || fragmentState;
-
-      return {
-        code: code || undefined,
-        state: finalState || undefined,
-        idToken: idToken || undefined,
-        accessToken: accessToken || undefined,
-        tokenType: tokenType || undefined,
-        expiresIn: expiresIn ? parseInt(expiresIn) : undefined,
-        error: error || undefined,
-        errorDescription: errorDescription || undefined,
-      };
-    }
-
-    return {
-      code: code || undefined,
-      state: state || undefined,
-      idToken: undefined,
-      accessToken: undefined,
-      tokenType: undefined,
-      expiresIn: undefined,
-      error: error || undefined,
-      errorDescription: errorDescription || undefined,
-    };
-  }
-
-  /**
-   * Hybrid Flow 콜백 처리
-   *
-   * Hybrid Flow (code id_token) 콜백을 처리합니다.
-   * URL에서 code와 id_token을 추출하여 검증하고 토큰을 교환합니다.
+   * Authorization Code Grant 콜백을 처리합니다.
+   * URL에서 authorization code를 추출하여 토큰을 교환합니다.
    *
    * @param callbackUrl - 콜백 URL
    * @param expectedState - 예상 state 값 (CSRF 방지)
-   * @param expectedNonce - 예상 nonce 값 (replay attack 방지)
    * @param codeVerifier - PKCE 코드 검증자
    * @returns 토큰 응답 객체
    * @throws {OAuth2Error} 콜백 처리 실패 시
@@ -949,24 +805,21 @@ export class FlowAuthClient {
    * ```typescript
    * try {
    *   // 콜백 URL에서 파라미터 추출 및 검증
-   *   const tokens = await client.handleHybridCallback(
+   *   const tokens = await client.handleCallback(
    *     window.location.href,
    *     sessionStorage.getItem('oauth_state'),
-   *     sessionStorage.getItem('oauth_nonce'),
    *     sessionStorage.getItem('oauth_code_verifier')
    *   );
    *
    *   console.log('Access Token:', tokens.access_token);
-   *   console.log('ID Token:', tokens.id_token);
    * } catch (error) {
-   *   console.error('Hybrid callback failed:', error.message);
+   *   console.error('Callback failed:', error.message);
    * }
    * ```
    */
-  async handleHybridCallback(
+  async handleCallback(
     callbackUrl: string,
     expectedState?: string,
-    expectedNonce?: string,
     codeVerifier?: string,
   ): Promise<TokenResponse> {
     const params = this.parseCallbackUrl(callbackUrl);
@@ -985,37 +838,11 @@ export class FlowAuthClient {
       throw new OAuth2Error("State mismatch - possible CSRF attack");
     }
 
-    // ID token 검증 및 저장
-    if (params.idToken) {
-      try {
-        await this.validateIdToken(params.idToken, expectedNonce);
-        this.idToken = params.idToken;
-      } catch {
-        // ID token 검증 실패해도 계속 진행 (선택적)
-        // Silently handle ID token validation errors
-      }
-    }
-
     // Authorization code가 있으면 토큰 교환
     if (params.code) {
       return await this.exchangeCode(params.code, codeVerifier);
     }
 
-    // Implicit tokens가 있는 경우 (fallback)
-    if (params.accessToken) {
-      const tokenResponse: TokenResponse = {
-        access_token: params.accessToken,
-        token_type: params.tokenType || "Bearer",
-        expires_in: params.expiresIn || 3600,
-        id_token: params.idToken,
-      };
-
-      this.saveTokens(tokenResponse);
-      return tokenResponse;
-    }
-
-    throw new OAuth2Error(
-      "No authorization code or access token found in callback",
-    );
+    throw new OAuth2Error("No authorization code found in callback");
   }
 }
