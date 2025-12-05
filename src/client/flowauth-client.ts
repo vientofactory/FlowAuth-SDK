@@ -11,11 +11,7 @@ import { OAuth2Error } from "../errors/oauth2";
 import { EnvironmentUtils } from "../utils/environment";
 import { getDefaultStorage } from "../utils/storage";
 import { OIDCUtils } from "../utils/oidc";
-import {
-  OAuth2Scope,
-  OAuth2ResponseType,
-  OAUTH2_CONSTANTS,
-} from "../constants/oauth2";
+import { OAuth2Scope, OAuth2ResponseType } from "../constants/oauth2";
 
 export class FlowAuthClient {
   /** OAuth2 클라이언트 ID */
@@ -129,7 +125,7 @@ export class FlowAuthClient {
     const { state, pkce, nonce, responseType } = options || {};
 
     return this.createAuthorizeUrlWithResponseType(
-      responseType || OAUTH2_CONSTANTS.RESPONSE_TYPES.CODE,
+      responseType || OAuth2ResponseType.CODE,
       scopes,
       state,
       pkce,
@@ -179,7 +175,7 @@ export class FlowAuthClient {
    */
   async createSecureAuthorizeUrl(
     scopes: OAuth2Scope[] = [OAuth2Scope.PROFILE],
-    responseType: string = OAUTH2_CONSTANTS.RESPONSE_TYPES.CODE,
+    responseType: string = OAuth2ResponseType.CODE,
   ): Promise<{
     authUrl: string;
     codeVerifier: string;
