@@ -52,6 +52,10 @@ export const DEFAULT_SCOPES: OAuth2Scope[] = [
  * OAuth2 관련 상수들
  */
 export const OAUTH2_CONSTANTS = {
+  /** 응답 타입들 */
+  RESPONSE_TYPES: {
+    CODE: OAuth2ResponseType.CODE,
+  } as const,
   /** 지원되는 응답 타입들 */
   SUPPORTED_RESPONSE_TYPES: [OAuth2ResponseType.CODE] as const,
   /** 지원되는 Grant 타입들 */
