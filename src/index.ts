@@ -16,12 +16,7 @@ export {
   OAuth2TokenType,
 } from "./constants/oauth2";
 
-export {
-  OAuth2ResponseTypes,
-  OAuth2GrantTypes,
-  OAuth2TokenTypes,
-  OAUTH2_CONSTANTS,
-} from "./constants/oauth2";
+export { OAUTH2_CONSTANTS } from "./constants/oauth2";
 
 export * from "./utils/environment";
 export * from "./utils/oidc";
