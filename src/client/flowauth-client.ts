@@ -103,14 +103,13 @@ export class FlowAuthClient {
    *   state: 'random-state-123'
    * });
    *
-   * // OIDC 사용 (자동으로 'code id_token' responseType 사용)
+   * // OIDC 사용 (openid 스코프와 함께 Authorization Code 사용)
    * const authUrl = client.createAuthorizeUrl([OAuth2Scope.OPENID, OAuth2Scope.PROFILE], {
    *   state: 'state-123',
    *   nonce: await FlowAuthClient.generateNonce()
    * });
    *
-   * // Implicit Grant (명시적 responseType 지정)
-   * // 제거됨: 보안상의 이유로 Implicit Grant는 더 이상 지원되지 않습니다.
+
    * ```
    */
   createAuthorizeUrl(
