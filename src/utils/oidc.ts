@@ -222,16 +222,57 @@ export class OIDCUtils {
     expectedAudience: string,
     expectedNonce?: string,
   ): IdTokenPayload {
+    // Input validation
+    if (!idToken || typeof idToken !== "string") {
+      throw new Error("Invalid ID token: string required");
+    }
+
+    // Token length validation
+    if (idToken.length > 8192) {
+      throw new Error("ID token too large");
+    }
+
+    // Basic JWT format validation
+    const parts = idToken.split(".");
+    if (parts.length !== 3) {
+      throw new Error("Invalid JWT format");
+    }
+
+    // Validate each part is Base64URL
+    for (const part of parts) {
+      if (!/^[A-Za-z0-9_-]*$/.test(part)) {
+        throw new Error("Invalid JWT encoding");
+      }
+    }
+
     try {
       const { payload } = EnvironmentUtils.parseJwt(idToken);
 
-      // 기본 검증
-      if (payload.iss !== expectedIssuer) {
+      // Enhanced payload validation
+      if (!payload || typeof payload !== "object") {
+        throw new Error("Invalid payload structure");
+      }
+
+      // Basic validation
+      if (typeof payload.iss !== "string" || payload.iss !== expectedIssuer) {
         throw new Error("Invalid issuer");
       }
 
-      if (payload.aud !== expectedAudience) {
+      if (typeof payload.aud !== "string" || payload.aud !== expectedAudience) {
         throw new Error("Invalid audience");
+      }
+
+      // Required claims validation
+      if (!payload.sub || typeof payload.sub !== "string") {
+        throw new Error("Missing or invalid subject claim");
+      }
+
+      if (!payload.iat || typeof payload.iat !== "number") {
+        throw new Error("Missing or invalid issued at claim");
+      }
+
+      if (!payload.exp || typeof payload.exp !== "number") {
+        throw new Error("Missing or invalid expiration claim");
       }
 
       // 만료 확인
@@ -240,15 +281,21 @@ export class OIDCUtils {
       }
 
       // nonce 검증 (있는 경우)
-      if (expectedNonce && payload.nonce !== expectedNonce) {
-        throw new Error("Invalid nonce");
+      if (expectedNonce) {
+        if (
+          typeof payload.nonce !== "string" ||
+          payload.nonce !== expectedNonce
+        ) {
+          throw new Error("Invalid nonce");
+        }
       }
 
       return payload as IdTokenPayload;
     } catch (error) {
-      throw new Error(
-        `ID token validation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error("ID token validation failed: Unknown error");
     }
   }
 }
