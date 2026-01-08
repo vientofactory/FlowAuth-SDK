@@ -76,16 +76,28 @@ export interface IdTokenPayload {
  * JWKS (JSON Web Key Set) 키 인터페이스
  */
 export interface JWKSKey {
-  /** 키 타입 */
+  /** 키 타입 (RSA, EC) */
   kty: string;
   /** 키 ID */
   kid: string;
-  /** RSA 모듈러스 (Base64URL) */
-  n: string;
-  /** RSA 공개 지수 (Base64URL) */
-  e: string;
+  /** 키 사용 목적 (sig, enc) */
+  use?: string;
   /** 알고리즘 */
   alg: string;
+
+  // RSA 키 매개변수
+  /** RSA 모듈러스 (Base64URL) */
+  n?: string;
+  /** RSA 공개 지수 (Base64URL) */
+  e?: string;
+
+  // ECDSA 키 매개변수
+  /** 타원 곡선 (P-256, P-384, P-521) */
+  crv?: string;
+  /** X 좌표 (Base64URL) */
+  x?: string;
+  /** Y 좌표 (Base64URL) */
+  y?: string;
 }
 
 /**

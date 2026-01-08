@@ -45,14 +45,16 @@ export class OIDCUtils {
   }
 
   /**
-   * RSA 공개키를 JWKS에서 가져옵니다.
+   * 공개키를 JWKS에서 가져옵니다 (RSA/ECDSA 모두 지원).
    * @param jwksUri JWKS 엔드포인트 URI
    * @param kid Key ID
-   * @returns RSA 공개키 (CryptoKey)
+   * @param alg 알고리즘 (RS256, ES256)
+   * @returns 공개키 (CryptoKey)
    */
-  static async getRsaPublicKey(
+  static async getPublicKey(
     jwksUri: string,
     kid: string,
+    alg: string,
   ): Promise<CryptoKey> {
     const jwks = await this.getJwks(jwksUri);
     const key = jwks.keys.find((k: JWKSKey) => k.kid === kid);
@@ -61,25 +63,77 @@ export class OIDCUtils {
       throw new Error(`Key with kid '${kid}' not found in JWKS`);
     }
 
-    if (key.kty !== "RSA") {
-      throw new Error("Only RSA keys are supported");
+    if (key.alg && key.alg !== alg) {
+      throw new Error(
+        `Key algorithm '${key.alg}' does not match expected '${alg}'`,
+      );
     }
-
-    // JWKS에서 RSA 공개키 구성
-    const publicKey = {
-      kty: key.kty,
-      n: key.n,
-      e: key.e,
-      alg: key.alg,
-      kid: key.kid,
-    };
 
     const crypto = EnvironmentUtils.getCrypto();
     if (!crypto) {
       throw new Error("Crypto API is not available");
     }
 
-    // CryptoKey로 변환
+    if (alg === "RS256") {
+      return this.importRsaKey(crypto, key);
+    } else if (alg === "ES256") {
+      return this.importEcdsaKey(crypto, key);
+    } else {
+      throw new Error(`Unsupported algorithm: ${alg}`);
+    }
+  }
+
+  /**
+   * RSA 공개키를 가져옵니다 (호환성을 위한 래퍼).
+   * @param jwksUri JWKS 엔드포인트 URI
+   * @param kid Key ID
+   * @returns RSA 공개키 (CryptoKey)
+   */
+  static async getRsaPublicKey(
+    jwksUri: string,
+    kid: string,
+  ): Promise<CryptoKey> {
+    return this.getPublicKey(jwksUri, kid, "RS256");
+  }
+
+  /**
+   * ECDSA 공개키를 가져옵니다.
+   * @param jwksUri JWKS 엔드포인트 URI
+   * @param kid Key ID
+   * @returns ECDSA 공개키 (CryptoKey)
+   */
+  static async getEcdsaPublicKey(
+    jwksUri: string,
+    kid: string,
+  ): Promise<CryptoKey> {
+    return this.getPublicKey(jwksUri, kid, "ES256");
+  }
+
+  /**
+   * RSA 키를 CryptoKey로 가져옵니다.
+   * @private
+   */
+  private static async importRsaKey(
+    crypto: Crypto,
+    key: JWKSKey,
+  ): Promise<CryptoKey> {
+    if (key.kty !== "RSA") {
+      throw new Error(`Expected RSA key, got ${key.kty}`);
+    }
+
+    if (!key.n || !key.e) {
+      throw new Error("Invalid RSA key: missing n or e parameter");
+    }
+
+    const publicKey = {
+      kty: key.kty,
+      n: key.n,
+      e: key.e,
+      alg: key.alg || "RS256",
+      kid: key.kid,
+      use: key.use || "sig",
+    };
+
     return await crypto.subtle.importKey(
       "jwk",
       publicKey,
@@ -93,7 +147,51 @@ export class OIDCUtils {
   }
 
   /**
-   * RSA 서명 검증을 포함한 ID 토큰 검증
+   * ECDSA 키를 CryptoKey로 가져옵니다.
+   * @private
+   */
+  private static async importEcdsaKey(
+    crypto: Crypto,
+    key: JWKSKey,
+  ): Promise<CryptoKey> {
+    if (key.kty !== "EC") {
+      throw new Error(`Expected EC key, got ${key.kty}`);
+    }
+
+    if (!key.x || !key.y || !key.crv) {
+      throw new Error("Invalid ECDSA key: missing x, y, or crv parameter");
+    }
+
+    if (key.crv !== "P-256") {
+      throw new Error(
+        `Unsupported ECDSA curve: ${key.crv}. Only P-256 is supported.`,
+      );
+    }
+
+    const publicKey = {
+      kty: key.kty,
+      crv: key.crv,
+      x: key.x,
+      y: key.y,
+      alg: key.alg || "ES256",
+      kid: key.kid,
+      use: key.use || "sig",
+    };
+
+    return await crypto.subtle.importKey(
+      "jwk",
+      publicKey,
+      {
+        name: "ECDSA",
+        namedCurve: "P-256",
+      },
+      false,
+      ["verify"],
+    );
+  }
+
+  /**
+   * 암호화 서명 검증을 포함한 ID 토큰 검증 (RSA/ECDSA 모두 지원)
    * @param idToken ID 토큰
    * @param jwksUri JWKS 엔드포인트 URI
    * @param expectedIssuer 예상 issuer
@@ -101,7 +199,7 @@ export class OIDCUtils {
    * @param expectedNonce 예상 nonce
    * @returns 검증된 토큰 페이로드
    */
-  static async validateAndParseIdTokenWithRsa(
+  static async validateAndParseIdTokenWithCrypto(
     idToken: string,
     jwksUri: string,
     expectedIssuer: string,
@@ -113,8 +211,13 @@ export class OIDCUtils {
 
       // 개발 환경 토큰은 검증 건너뛰기 (HMAC 서명)
       if (header.alg === "HS256") {
-        // Development environment token detected, skipping RSA validation
         return payload as IdTokenPayload;
+      }
+
+      // 알고리즘 확인
+      const alg = header.alg as string;
+      if (!alg || (!alg.startsWith("RS") && !alg.startsWith("ES"))) {
+        throw new Error(`Unsupported algorithm: ${alg}`);
       }
 
       // 헤더에서 key ID 추출
@@ -123,62 +226,19 @@ export class OIDCUtils {
         throw new Error("Key ID (kid) not found in token header");
       }
 
-      // RSA 공개키 가져오기
-      const publicKey = await this.getRsaPublicKey(jwksUri, kid);
+      // 공개키 가져오기 (RSA 또는 ECDSA)
+      const publicKey = await this.getPublicKey(jwksUri, kid, alg);
 
       // 서명 검증
-      const crypto = EnvironmentUtils.getCrypto();
-      if (!crypto) {
-        throw new Error("Crypto API is not available");
-      }
-
-      const encoder = new TextEncoder();
-      const data = encoder.encode(
-        `${idToken.split(".")[0]}.${idToken.split(".")[1]}`,
-      );
-
-      // 서명 디코딩
-      let signatureBytes: ArrayBuffer;
-      if (EnvironmentUtils.isNode()) {
-        // Node.js 환경: Buffer 사용
-        const signatureBase64 = signature.replace(/-/g, "+").replace(/_/g, "/");
-        const globalWithBuffer = globalThis as {
-          Buffer?: {
-            from: (
-              input: string,
-              encoding: string,
-            ) => {
-              buffer: ArrayBuffer;
-              byteOffset: number;
-              byteLength: number;
-            };
-          };
-        };
-        const buffer = globalWithBuffer.Buffer?.from(signatureBase64, "base64");
-        if (!buffer) {
-          throw new Error("Buffer is not available in Node.js environment");
-        }
-        signatureBytes = buffer.buffer.slice(
-          buffer.byteOffset,
-          buffer.byteOffset + buffer.byteLength,
-        );
-      } else {
-        // 브라우저 환경: atob 사용 (텍스트 데이터에만)
-        const decoded = EnvironmentUtils.atob(
-          signature.replace(/-/g, "+").replace(/_/g, "/"),
-        );
-        signatureBytes = Uint8Array.from(decoded, c => c.charCodeAt(0)).buffer;
-      }
-
-      const isValidSignature = await crypto.subtle.verify(
-        "RSASSA-PKCS1-v1_5",
+      const isValidSignature = await this.verifySignature(
+        idToken,
         publicKey,
-        signatureBytes,
-        data,
+        alg,
+        signature,
       );
 
       if (!isValidSignature) {
-        throw new Error("Invalid RSA signature");
+        throw new Error(`Invalid ${alg} signature`);
       }
 
       // 기본 검증
@@ -203,8 +263,116 @@ export class OIDCUtils {
       return payload as IdTokenPayload;
     } catch (error) {
       throw new Error(
-        `RSA ID token validation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+        `Crypto ID token validation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       );
+    }
+  }
+
+  /**
+   * RSA 서명 검증을 포함한 ID 토큰 검증 (호환성을 위한 래퍼)
+   * @param idToken ID 토큰
+   * @param jwksUri JWKS 엔드포인트 URI
+   * @param expectedIssuer 예상 issuer
+   * @param expectedAudience 예상 audience
+   * @param expectedNonce 예상 nonce
+   * @returns 검증된 토큰 페이로드
+   */
+  static async validateAndParseIdTokenWithRsa(
+    idToken: string,
+    jwksUri: string,
+    expectedIssuer: string,
+    expectedAudience: string,
+    expectedNonce?: string,
+  ): Promise<IdTokenPayload> {
+    return this.validateAndParseIdTokenWithCrypto(
+      idToken,
+      jwksUri,
+      expectedIssuer,
+      expectedAudience,
+      expectedNonce,
+    );
+  }
+
+  /**
+   * 서명을 검증합니다 (RSA/ECDSA).
+   * @private
+   */
+  private static async verifySignature(
+    idToken: string,
+    publicKey: CryptoKey,
+    algorithm: string,
+    signature: string,
+  ): Promise<boolean> {
+    const crypto = EnvironmentUtils.getCrypto();
+    if (!crypto) {
+      throw new Error("Crypto API is not available");
+    }
+
+    const encoder = new TextEncoder();
+    const data = encoder.encode(
+      `${idToken.split(".")[0]}.${idToken.split(".")[1]}`,
+    );
+
+    // 서명 디코딩
+    const signatureBytes = this.decodeSignature(signature);
+
+    // 알고리즘에 따른 서명 검증
+    if (algorithm === "RS256") {
+      return await crypto.subtle.verify(
+        "RSASSA-PKCS1-v1_5",
+        publicKey,
+        signatureBytes,
+        data,
+      );
+    } else if (algorithm === "ES256") {
+      return await crypto.subtle.verify(
+        {
+          name: "ECDSA",
+          hash: "SHA-256",
+        },
+        publicKey,
+        signatureBytes,
+        data,
+      );
+    } else {
+      throw new Error(`Unsupported signature algorithm: ${algorithm}`);
+    }
+  }
+
+  /**
+   * Base64URL 서명을 ArrayBuffer로 디코딩합니다.
+   * @private
+   */
+  private static decodeSignature(signature: string): ArrayBuffer {
+    if (EnvironmentUtils.isNode()) {
+      // Node.js 환경: Buffer 사용
+      const signatureBase64 = signature.replace(/-/g, "+").replace(/_/g, "/");
+      const globalWithBuffer = globalThis as {
+        Buffer?: {
+          from: (
+            input: string,
+            encoding: string,
+          ) => {
+            buffer: ArrayBuffer;
+            byteOffset: number;
+            byteLength: number;
+          };
+        };
+      };
+      const buffer = globalWithBuffer.Buffer?.from(signatureBase64, "base64");
+      if (!buffer) {
+        throw new Error("Buffer is not available in Node.js environment");
+      }
+      return buffer.buffer.slice(
+        buffer.byteOffset,
+        buffer.byteOffset + buffer.byteLength,
+      );
+    } else {
+      // 브라우저 환경: atob 사용
+      const decoded = EnvironmentUtils.atob(
+        signature.replace(/-/g, "+").replace(/_/g, "/"),
+      );
+      return Uint8Array.from(decoded, c => c.charCodeAt(0)).buffer;
     }
   }
 

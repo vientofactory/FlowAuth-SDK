@@ -6,6 +6,8 @@ FlowAuth와의 OAuth2 Authorization Code Grant 통합을 위한 간단한 TypeSc
 
 - OAuth2 Authorization Code Grant 플로우 지원
 - PKCE (Proof Key for Code Exchange) 지원
+- **향상된 암호화 지원**: RSA (RS256) 및 ECDSA (ES256) 알고리즘 지원
+- **강화된 ID 토큰 검증**: JWKS 기반 서명 검증 (RSA/ECDSA)
 - 자동 토큰 리프래시
 - 토큰 저장 및 관리 (브라우저 sessionStorage/localStorage)
 - TypeScript OAuth2 스코프 enum 제공 (타입 안전한 권한 관리)
@@ -509,6 +511,79 @@ const newTokens = await client.refreshToken(tokens.refresh_token);
 const tokenInfo = client.getTokenInfo();
 console.log("Current tokens:", tokenInfo);
 ```
+
+### 암호화 서명 검증 (RSA/ECDSA)
+
+SDK는 ID 토큰의 암호화 서명 검증을 완전히 지원합니다. FlowAuth 서버가 RSA (RS256) 또는 ECDSA (ES256) 알고리즘을 사용하는지에 관계없이 자동으로 적절한 검증을 수행합니다.
+
+```javascript
+// ID 토큰 자동 검증 (RSA/ECDSA 모두 지원)
+try {
+  const idTokenPayload = await client.validateIdToken();
+  console.log("검증된 ID 토큰 정보:", {
+    userId: idTokenPayload.sub,
+    email: idTokenPayload.email,
+    name: idTokenPayload.name,
+    issuer: idTokenPayload.iss,
+    audience: idTokenPayload.aud,
+    issuedAt: new Date(idTokenPayload.iat * 1000),
+    expiration: new Date(idTokenPayload.exp * 1000),
+  });
+} catch (error) {
+  console.error("ID 토큰 검증 실패:", error.message);
+  // 가능한 원인:
+  // - 서명이 유효하지 않음
+  // - 토큰이 만료됨
+  // - issuer 또는 audience가 일치하지 않음
+  // - JWKS를 가져올 수 없음
+}
+
+// 수동 ID 토큰 검증 (더 세밀한 제어)
+try {
+  const customIdToken = "eyJ..."; // 외부에서 받은 ID 토큰
+  const expectedNonce = "custom-nonce-value";
+
+  const payload = await client.validateIdToken(customIdToken, expectedNonce);
+  console.log("검증 성공:", payload);
+} catch (error) {
+  console.error("검증 실패:", error.message);
+}
+
+// OIDC 유틸리티 직접 사용 (고급 사용법)
+import { OIDCUtils } from "flowauth-oauth2-client";
+
+try {
+  // RSA 키로 검증
+  const rsaPayload = await OIDCUtils.validateAndParseIdTokenWithCrypto(
+    idToken,
+    "https://your-server.com/.well-known/jwks.json",
+    "https://your-server.com", // expected issuer
+    "your-client-id", // expected audience
+    nonce, // expected nonce (선택사항)
+  );
+
+  // 또는 특정 공개키 가져오기 (RSA/ECDSA 자동 감지)
+  const publicKey = await OIDCUtils.getPublicKey(
+    "https://your-server.com/.well-known/jwks.json",
+    "rsa-key-env", // 또는 "ec-key-env"
+    "RS256", // 또는 "ES256"
+  );
+} catch (error) {
+  console.error("암호화 검증 실패:", error.message);
+}
+```
+
+#### 지원되는 암호화 알고리즘
+
+- **RSA (RS256)**: 2048비트 RSA 키와 SHA-256 해시 함수 사용
+- **ECDSA (ES256)**: P-256 곡선과 SHA-256 해시 함수 사용
+
+#### 보안 고려사항
+
+- ID 토큰은 항상 HTTPS를 통해 전송되어야 합니다
+- nonce 값은 각 인증 요청마다 고유해야 합니다 (CSRF 방지)
+- 토큰 검증은 백엔드에서도 수행하는 것을 권장합니다
+- JWKS URI는 HTTPS를 사용해야 합니다
 
 ## 배포
 

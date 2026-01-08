@@ -227,7 +227,9 @@ export class FlowAuthClient {
       redirect_uri: this.redirectUri,
     });
 
-    if (codeVerifier) params.set("code_verifier", codeVerifier);
+    if (codeVerifier) {
+      params.set("code_verifier", codeVerifier);
+    }
 
     const response = await EnvironmentUtils.getFetch()(
       `${this.server}/oauth2/token`,
@@ -756,7 +758,7 @@ export class FlowAuthClient {
       throw new Error("JWKS URI not found in discovery document");
     }
 
-    return await OIDCUtils.validateAndParseIdTokenWithRsa(
+    return await OIDCUtils.validateAndParseIdTokenWithCrypto(
       token,
       discovery.jwks_uri,
       discovery.issuer,
