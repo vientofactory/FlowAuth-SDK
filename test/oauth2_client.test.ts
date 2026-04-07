@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   FlowAuthClient,
   OAuth2Scope,
@@ -194,6 +194,75 @@ describe("FlowAuthClient", () => {
         state: "state123",
       });
       expect(url).toContain("response_type=code");
+    });
+  });
+
+  describe("UserInfo URL normalization", () => {
+    it("should recover nested backend+files domain picture URL", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          sub: "1",
+          picture:
+            "https://authserver.viento.mehttps//files.viento.me/hash-value",
+        }),
+      });
+
+      const originalFetch = globalThis.fetch;
+      (globalThis as { fetch: typeof fetch }).fetch = fetchMock as typeof fetch;
+
+      try {
+        const testClient = new FlowAuthClient({
+          server: "https://authserver.viento.me",
+          clientId: "client-id",
+          clientSecret: "client-secret",
+          redirectUri: "https://example.com/callback",
+        });
+
+        (
+          testClient as unknown as { tokenData: { access_token: string } }
+        ).tokenData = {
+          access_token: "access-token",
+        };
+
+        const userInfo = await testClient.getUserInfo();
+        expect(userInfo.picture).toBe("https://files.viento.me/hash-value");
+      } finally {
+        (globalThis as { fetch: typeof fetch }).fetch = originalFetch;
+      }
+    });
+
+    it("should recover malformed https// avatar URL", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          sub: "1",
+          avatar: "https//files.viento.me/hash-value",
+        }),
+      });
+
+      const originalFetch = globalThis.fetch;
+      (globalThis as { fetch: typeof fetch }).fetch = fetchMock as typeof fetch;
+
+      try {
+        const testClient = new FlowAuthClient({
+          server: "https://authserver.viento.me",
+          clientId: "client-id",
+          clientSecret: "client-secret",
+          redirectUri: "https://example.com/callback",
+        });
+
+        (
+          testClient as unknown as { tokenData: { access_token: string } }
+        ).tokenData = {
+          access_token: "access-token",
+        };
+
+        const userInfo = await testClient.getUserInfo();
+        expect(userInfo.avatar).toBe("https://files.viento.me/hash-value");
+      } finally {
+        (globalThis as { fetch: typeof fetch }).fetch = originalFetch;
+      }
     });
   });
 });
