@@ -333,7 +333,8 @@ export class FlowAuthClient {
       );
     }
 
-    return response.json();
+    const userInfo: UserInfo = await response.json();
+    return this.normalizeUserInfoUrls(userInfo);
   }
 
   /**
@@ -500,6 +501,65 @@ export class FlowAuthClient {
     } finally {
       this.refreshPromise = undefined;
     }
+  }
+
+  private normalizeUserInfoUrls(userInfo: UserInfo): UserInfo {
+    const normalized = { ...userInfo } as Record<string, unknown>;
+    const urlFields = ["picture", "avatar", "avatarUrl", "avatar_url"];
+
+    for (const field of urlFields) {
+      const value = normalized[field];
+      if (typeof value === "string") {
+        normalized[field] = this.normalizePossiblyBrokenUrl(value);
+      }
+    }
+
+    return normalized as UserInfo;
+  }
+
+  private normalizePossiblyBrokenUrl(value: string): string {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return trimmed;
+    }
+
+    const extracted = this.extractEmbeddedAbsoluteUrl(trimmed);
+    const candidate = extracted ?? trimmed;
+    const fixedScheme = candidate
+      .replace(/^https\/\//i, "https://")
+      .replace(/^http\/\//i, "http://");
+
+    if (/^https?:\/\//i.test(fixedScheme)) {
+      return fixedScheme;
+    }
+
+    if (fixedScheme.startsWith("//")) {
+      return `https:${fixedScheme}`;
+    }
+
+    if (fixedScheme.startsWith("/")) {
+      return `${this.server.replace(/\/+$/, "")}${fixedScheme}`;
+    }
+
+    return fixedScheme;
+  }
+
+  private extractEmbeddedAbsoluteUrl(value: string): string | null {
+    const matches = [...value.matchAll(/https?:\/\/|https\/\/|http\/\//gi)];
+
+    if (matches.length >= 2) {
+      const secondIndex = matches[1].index;
+      return secondIndex === undefined ? null : value.slice(secondIndex);
+    }
+
+    if (matches.length === 1) {
+      const firstIndex = matches[0].index;
+      if (firstIndex !== undefined && firstIndex > 0) {
+        return value.slice(firstIndex);
+      }
+    }
+
+    return null;
   }
 
   /**
