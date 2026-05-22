@@ -358,7 +358,10 @@ export class FlowAuthClient {
    * }
    * ```
    */
-  async refreshToken(refreshToken?: string): Promise<TokenResponse> {
+  async refreshToken(
+    refreshToken?: string,
+    scope?: string,
+  ): Promise<TokenResponse> {
     const token = refreshToken || this.tokenData?.refresh_token;
 
     if (!token) {
@@ -370,6 +373,10 @@ export class FlowAuthClient {
       client_id: this.clientId,
       refresh_token: token,
     });
+
+    if (scope) {
+      params.set("scope", scope);
+    }
 
     const response = await EnvironmentUtils.getFetch()(
       `${this.server}/oauth2/token`,
