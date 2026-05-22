@@ -276,6 +276,23 @@ const emailAuthUrl = client.createAuthorizeUrl([
   OAuth2Scope.EMAIL,
 ]);
 console.log("이메일 정보 접근 인증:", emailAuthUrl);
+
+// 3. Refresh Token 발급 요청 (offline_access 스코프)
+// offline_access 스코프를 포함하면 서버가 Refresh Token을 함께 발급합니다.
+const offlineAuthUrl = client.createAuthorizeUrl([
+  OAuth2Scope.OPENID,
+  OAuth2Scope.PROFILE,
+  OAuth2Scope.OFFLINE_ACCESS,
+]);
+console.log("오프라인 접근 인증 (Refresh Token 포함):", offlineAuthUrl);
+
+// 4. 토큰 갱신 시 스코프 다운스코핑 (RFC 6749 §6)
+// refresh_token 사용 시 원래 스코프의 부분 집합으로 범위를 줄일 수 있습니다.
+const newTokens = await client.refreshToken(
+  undefined, // 저장된 Refresh Token 자동 사용
+  "openid profile", // 이메일 스코프를 제외하고 갱신
+);
+console.log("다운스코핑된 새 토큰:", newTokens.scope);
 ```
 
 ### Node.js 스토리지 사용 예제
@@ -621,6 +638,7 @@ enum OAuth2Scope {
   OPENID = "openid", // OpenID Connect 인증을 위한 기본 스코프
   PROFILE = "profile", // 사용자 프로필 정보 (이름, 생년월일, 지역, 사진 등) 접근
   EMAIL = "email", // 사용자 이메일 주소 읽기
+  OFFLINE_ACCESS = "offline_access", // Refresh Token 발급 요청 (RFC 6749 §6 / OpenID Connect)
 }
 ```
 
@@ -652,7 +670,7 @@ new FlowAuthClient(config: OAuth2ClientConfig)
 - `createAuthorizeUrl(scopes?, state?, pkce?, nonce?, responseType?)`: 인증 URL 생성 (기본값: `[OAuth2Scope.PROFILE]`)
 - `createSecureAuthorizeUrl(scopes?, responseType?)`: PKCE와 State를 자동 생성하여 보안 인증 URL 생성 (기본값: `[OAuth2Scope.PROFILE]`)
 - `exchangeCode(code, codeVerifier?)`: Authorization Code를 토큰으로 교환
-- `refreshToken(refreshToken?)`: 토큰 리프래시 (저장된 토큰 자동 사용)
+- `refreshToken(refreshToken?, scope?)`: 토큰 리프래시 (저장된 토큰 자동 사용, `scope`로 다운스코핑 가능)
 - `validateToken(accessToken?)`: 토큰 유효성 검증
 - `getStoredAccessToken()`: 저장된 액세스 토큰 조회
 - `getTokenInfo()`: 현재 토큰 정보 조회

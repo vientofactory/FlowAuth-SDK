@@ -9,6 +9,8 @@ export enum OAuth2Scope {
   PROFILE = "profile",
   /** 사용자 이메일 주소 읽기 */
   EMAIL = "email",
+  /** 오프라인 액세스 – Refresh Token 발급을 요청 (RFC 6749 §6 / OpenID Connect) */
+  OFFLINE_ACCESS = "offline_access",
 }
 
 /**

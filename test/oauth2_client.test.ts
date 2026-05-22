@@ -161,6 +161,84 @@ describe("FlowAuthClient", () => {
     });
   });
 
+  describe("offline_access scope", () => {
+    it("should have OFFLINE_ACCESS in OAuth2Scope enum", () => {
+      expect(OAuth2Scope.OFFLINE_ACCESS).toBe("offline_access");
+    });
+
+    it("should include offline_access in authorize URL scope", () => {
+      const url = client.createAuthorizeUrl(
+        [OAuth2Scope.OPENID, OAuth2Scope.PROFILE, OAuth2Scope.OFFLINE_ACCESS],
+        { state: "state123" },
+      );
+      expect(url).toContain("offline_access");
+      expect(url).toContain("openid");
+      expect(url).toContain("profile");
+    });
+
+    it("should send scope param in refreshToken when provided", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          access_token: "new-access-token",
+          token_type: "Bearer",
+          expires_in: 3600,
+          scope: "openid profile",
+        }),
+      });
+      const originalFetch = globalThis.fetch;
+      (globalThis as { fetch: typeof fetch }).fetch = fetchMock as typeof fetch;
+
+      try {
+        const testClient = new FlowAuthClient({
+          server: "https://example.com",
+          clientId: "client-id",
+          clientSecret: "client-secret",
+          redirectUri: "https://example.com/callback",
+        });
+
+        await testClient.refreshToken("test-refresh-token", "openid profile");
+
+        expect(fetchMock).toHaveBeenCalledOnce();
+        const callArgs = fetchMock.mock.calls[0];
+        const body = callArgs[1].body as string;
+        expect(body).toContain("scope=openid+profile");
+      } finally {
+        (globalThis as { fetch: typeof fetch }).fetch = originalFetch;
+      }
+    });
+
+    it("should not send scope param in refreshToken when not provided", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          access_token: "new-access-token",
+          token_type: "Bearer",
+          expires_in: 3600,
+        }),
+      });
+      const originalFetch = globalThis.fetch;
+      (globalThis as { fetch: typeof fetch }).fetch = fetchMock as typeof fetch;
+
+      try {
+        const testClient = new FlowAuthClient({
+          server: "https://example.com",
+          clientId: "client-id",
+          clientSecret: "client-secret",
+          redirectUri: "https://example.com/callback",
+        });
+
+        await testClient.refreshToken("test-refresh-token");
+
+        const callArgs = fetchMock.mock.calls[0];
+        const body = callArgs[1].body as string;
+        expect(body).not.toContain("scope=");
+      } finally {
+        (globalThis as { fetch: typeof fetch }).fetch = originalFetch;
+      }
+    });
+  });
+
   describe("Response Type Parameter Support", () => {
     const client = new FlowAuthClient({
       server: "https://example.com",
