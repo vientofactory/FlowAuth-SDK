@@ -264,6 +264,7 @@ export class OIDCUtils {
     } catch (error) {
       throw new Error(
         `Crypto ID token validation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+        { cause: error },
       );
     }
   }
@@ -463,7 +464,9 @@ export class OIDCUtils {
       if (error instanceof Error) {
         throw error;
       }
-      throw new Error("ID token validation failed: Unknown error");
+      throw new Error("ID token validation failed: Unknown error", {
+        cause: error,
+      });
     }
   }
 }
