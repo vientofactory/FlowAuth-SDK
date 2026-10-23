@@ -190,15 +190,7 @@ export class OIDCUtils {
     );
   }
 
-  /**
-   * 암호화 서명 검증을 포함한 ID 토큰 검증 (RSA/ECDSA 모두 지원)
-   * @param idToken ID 토큰
-   * @param jwksUri JWKS 엔드포인트 URI
-   * @param expectedIssuer 예상 issuer
-   * @param expectedAudience 예상 audience
-   * @param expectedNonce 예상 nonce
-   * @returns 검증된 토큰 페이로드
-   */
+  /** Verify an RS256/ES256 signature and all required ID token claims. */
   static async validateAndParseIdTokenWithCrypto(
     idToken: string,
     jwksUri: string,
@@ -207,60 +199,33 @@ export class OIDCUtils {
     expectedNonce?: string,
   ): Promise<IdTokenPayload> {
     try {
-      const { header, payload, signature } = EnvironmentUtils.parseJwt(idToken);
-
-      // 개발 환경 토큰은 검증 건너뛰기 (HMAC 서명)
-      if (header.alg === "HS256") {
-        return payload as IdTokenPayload;
+      const { header, signature } = EnvironmentUtils.parseJwt(idToken);
+      const alg = header.alg;
+      if (alg !== "RS256" && alg !== "ES256") {
+        throw new Error(`Unsupported algorithm: ${String(alg)}`);
       }
-
-      // 알고리즘 확인
-      const alg = header.alg as string;
-      if (!alg || (!alg.startsWith("RS") && !alg.startsWith("ES"))) {
-        throw new Error(`Unsupported algorithm: ${alg}`);
-      }
-
-      // 헤더에서 key ID 추출
-      const kid = header.kid as string;
-      if (!kid) {
+      if (typeof header.kid !== "string" || !header.kid.trim()) {
         throw new Error("Key ID (kid) not found in token header");
       }
-
-      // 공개키 가져오기 (RSA 또는 ECDSA)
-      const publicKey = await this.getPublicKey(jwksUri, kid, alg);
-
-      // 서명 검증
-      const isValidSignature = await this.verifySignature(
+      // Reject malformed claims before fetching keys, but never authenticate
+      // until the signature has been checked against the issuer's public key.
+      this.validateAndParseIdToken(
         idToken,
-        publicKey,
-        alg,
-        signature,
+        expectedIssuer,
+        expectedAudience,
+        expectedNonce,
       );
-
-      if (!isValidSignature) {
+      const publicKey = await this.getPublicKey(jwksUri, header.kid, alg);
+      if (!(await this.verifySignature(idToken, publicKey, alg, signature))) {
         throw new Error(`Invalid ${alg} signature`);
       }
-
-      // 기본 검증
-      if (payload.iss !== expectedIssuer) {
-        throw new Error("Invalid issuer");
-      }
-
-      if (payload.aud !== expectedAudience) {
-        throw new Error("Invalid audience");
-      }
-
-      // 만료 확인
-      if (EnvironmentUtils.isTokenExpired(idToken)) {
-        throw new Error("Token is expired");
-      }
-
-      // nonce 검증 (있는 경우)
-      if (expectedNonce && payload.nonce !== expectedNonce) {
-        throw new Error("Invalid nonce");
-      }
-
-      return payload as IdTokenPayload;
+      // Key retrieval and verification can outlast the token's remaining life.
+      return this.validateAndParseIdToken(
+        idToken,
+        expectedIssuer,
+        expectedAudience,
+        expectedNonce,
+      );
     } catch (error) {
       throw new Error(
         `Crypto ID token validation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -378,12 +343,9 @@ export class OIDCUtils {
   }
 
   /**
-   * 기본 ID 토큰 검증 (RSA 서명 검증 제외)
-   * @param idToken ID 토큰
-   * @param expectedIssuer 예상 issuer
-   * @param expectedAudience 예상 audience
-   * @param expectedNonce 예상 nonce
-   * @returns 검증된 토큰 페이로드
+   * Parse and check claims without verifying the signature.
+   * This compatibility utility must never be used to authenticate a token.
+   * Use validateAndParseIdTokenWithCrypto for trusted identity decisions.
    */
   static validateAndParseIdToken(
     idToken: string,
@@ -391,82 +353,55 @@ export class OIDCUtils {
     expectedAudience: string,
     expectedNonce?: string,
   ): IdTokenPayload {
-    // Input validation
-    if (!idToken || typeof idToken !== "string") {
+    if (typeof idToken !== "string" || !idToken) {
       throw new Error("Invalid ID token: string required");
     }
-
-    // Token length validation
-    if (idToken.length > 8192) {
-      throw new Error("ID token too large");
-    }
-
-    // Basic JWT format validation
+    if (idToken.length > 8192) throw new Error("ID token too large");
     const parts = idToken.split(".");
-    if (parts.length !== 3) {
-      throw new Error("Invalid JWT format");
+    if (parts.length !== 3) throw new Error("Invalid JWT format");
+    if (parts.some(part => !/^[A-Za-z0-9_-]+$/.test(part))) {
+      throw new Error("Invalid JWT encoding");
     }
-
-    // Validate each part is Base64URL
-    for (const part of parts) {
-      if (!/^[A-Za-z0-9_-]*$/.test(part)) {
-        throw new Error("Invalid JWT encoding");
-      }
+    const { header, payload } = EnvironmentUtils.parseJwt(idToken);
+    if (header.alg !== "RS256" && header.alg !== "ES256") {
+      throw new Error(`Unsupported algorithm: ${String(header.alg)}`);
     }
-
-    try {
-      const { payload } = EnvironmentUtils.parseJwt(idToken);
-
-      // Enhanced payload validation
-      if (!payload || typeof payload !== "object") {
-        throw new Error("Invalid payload structure");
-      }
-
-      // Basic validation
-      if (typeof payload.iss !== "string" || payload.iss !== expectedIssuer) {
-        throw new Error("Invalid issuer");
-      }
-
-      if (typeof payload.aud !== "string" || payload.aud !== expectedAudience) {
-        throw new Error("Invalid audience");
-      }
-
-      // Required claims validation
-      if (!payload.sub || typeof payload.sub !== "string") {
-        throw new Error("Missing or invalid subject claim");
-      }
-
-      if (!payload.iat || typeof payload.iat !== "number") {
-        throw new Error("Missing or invalid issued at claim");
-      }
-
-      if (!payload.exp || typeof payload.exp !== "number") {
-        throw new Error("Missing or invalid expiration claim");
-      }
-
-      // 만료 확인
-      if (EnvironmentUtils.isTokenExpired(idToken)) {
-        throw new Error("Token is expired");
-      }
-
-      // nonce 검증 (있는 경우)
-      if (expectedNonce) {
-        if (
-          typeof payload.nonce !== "string" ||
-          payload.nonce !== expectedNonce
-        ) {
-          throw new Error("Invalid nonce");
-        }
-      }
-
-      return payload as IdTokenPayload;
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error("ID token validation failed: Unknown error", {
-        cause: error,
-      });
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new Error("Invalid payload structure");
     }
+    if (typeof payload.iss !== "string" || payload.iss !== expectedIssuer) {
+      throw new Error("Invalid issuer");
+    }
+    if (typeof payload.aud !== "string" || payload.aud !== expectedAudience) {
+      throw new Error("Invalid audience");
+    }
+    if (typeof payload.sub !== "string" || !payload.sub.trim()) {
+      throw new Error("Missing or invalid subject claim");
+    }
+    const now = Math.floor(Date.now() / 1000);
+    if (
+      typeof payload.iat !== "number" ||
+      !Number.isFinite(payload.iat) ||
+      payload.iat > now
+    ) {
+      throw new Error("Missing or invalid issued at claim");
+    }
+    if (typeof payload.exp !== "number" || !Number.isFinite(payload.exp)) {
+      throw new Error("Missing or invalid expiration claim");
+    }
+    if (EnvironmentUtils.isTokenExpired(idToken))
+      throw new Error("Token is expired");
+    if (
+      payload.nbf !== undefined &&
+      (typeof payload.nbf !== "number" ||
+        !Number.isFinite(payload.nbf) ||
+        payload.nbf > now)
+    ) {
+      throw new Error("Invalid not before claim");
+    }
+    if (expectedNonce !== undefined && payload.nonce !== expectedNonce) {
+      throw new Error("Invalid nonce");
+    }
+    return payload as IdTokenPayload;
   }
 }
