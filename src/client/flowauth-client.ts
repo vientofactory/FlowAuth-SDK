@@ -32,10 +32,16 @@ export class FlowAuthClient {
   private refreshPromise?: Promise<TokenResponse>;
   /** OIDC Discovery 문서 캐시 */
   private discoveryDocument?: OIDCDiscoveryDocument;
-  /** 저장된 ID 토큰 */
-  private idToken?: string;
-  /** 저장된 nonce 값 */
+  /** Invalidate asynchronous token operations when the session changes. */
+  private sessionVersion = 0;
+  private refreshContext?: {
+    token: string;
+    scope?: string;
+    version: number;
+  };
+  /** Expected nonce for the active session and the next authorization grant. */
   private nonce?: string;
+  private pendingNonce?: string;
 
   /**
    * FlowAuthClient 생성자
@@ -151,10 +157,8 @@ export class FlowAuthClient {
     });
 
     if (state) params.set("state", state);
-    if (nonce) {
-      params.set("nonce", nonce);
-      this.nonce = nonce; // nonce 저장
-    }
+    this.pendingNonce = nonce;
+    if (nonce) params.set("nonce", nonce);
     if (pkce) {
       params.set("code_challenge", pkce.codeChallenge);
       params.set("code_challenge_method", pkce.codeChallengeMethod || "S256");
@@ -220,6 +224,10 @@ export class FlowAuthClient {
     code: string,
     codeVerifier?: string,
   ): Promise<TokenResponse> {
+    const nonce = this.pendingNonce;
+    this.clearStoredTokens();
+    this.nonce = nonce;
+    const version = this.sessionVersion;
     const params = new URLSearchParams({
       grant_type: "authorization_code",
       client_id: this.clientId,
@@ -253,6 +261,7 @@ export class FlowAuthClient {
     }
 
     const tokenResponse: TokenResponse = await response.json();
+    this.assertSessionVersion(version);
     this.saveTokens(tokenResponse);
     return tokenResponse;
   }
@@ -305,15 +314,10 @@ export class FlowAuthClient {
    * ```
    */
   async getUserInfo(accessToken?: string): Promise<UserInfo> {
-    let token = accessToken || this.getStoredAccessToken();
-
-    if (!token) {
-      throw new OAuth2Error("No access token available");
-    }
-
-    // 자동 리프래시 시도
-    await this.refreshTokenIfNeeded();
-    token = this.getStoredAccessToken() || token;
+    if (accessToken === undefined) await this.refreshTokenIfNeeded();
+    const token = accessToken ?? this.getStoredAccessToken();
+    if (!token) throw new OAuth2Error("No access token available");
+    const version = this.sessionVersion;
 
     const response = await EnvironmentUtils.getFetch()(
       `${this.server}/oauth2/userinfo`,
@@ -334,105 +338,170 @@ export class FlowAuthClient {
     }
 
     const userInfo: UserInfo = await response.json();
+    if (accessToken === undefined) this.assertSessionVersion(version);
     return this.normalizeUserInfoUrls(userInfo);
   }
 
-  /**
-   * 토큰 리프래시
-   *
-   * Refresh Token을 사용하여 새로운 Access Token을 발급받습니다.
-   * 성공 시 새로운 토큰이 자동으로 저장됩니다.
-   *
-   * @param refreshToken - 사용할 리프래시 토큰 (선택적, 기본값: 저장된 토큰)
-   * @returns 새로운 토큰 응답 객체
-   * @throws {OAuth2Error} 리프래시 토큰이 없거나, API 요청 실패 시
-   *
-   * @example
-   * ```typescript
-   * try {
-   *   const newTokens = await client.refreshToken();
-   *   console.log('New access token:', newTokens.access_token);
-   * } catch (error) {
-   *   console.error('Token refresh failed:', error.message);
-   *   // 필요시 재인증
-   * }
-   * ```
-   */
+  /** Refresh once per session/token/scope, preserving omitted refresh metadata. */
   async refreshToken(
     refreshToken?: string,
     scope?: string,
   ): Promise<TokenResponse> {
-    const token = refreshToken || this.tokenData?.refresh_token;
-
-    if (!token) {
-      throw new OAuth2Error("No refresh token available");
+    const token = refreshToken ?? this.tokenData?.refresh_token;
+    if (!token) throw new OAuth2Error("No refresh token available");
+    if (this.refreshPromise) {
+      if (
+        this.refreshContext?.token === token &&
+        this.refreshContext.scope === scope &&
+        this.refreshContext.version === this.sessionVersion
+      ) {
+        return this.refreshPromise;
+      }
+      throw new OAuth2Error("A different token refresh is already in progress");
     }
-
-    const params = new URLSearchParams({
-      grant_type: "refresh_token",
-      client_id: this.clientId,
-      refresh_token: token,
-    });
-
-    if (scope) {
-      params.set("scope", scope);
+    // An explicitly supplied token from another session must not inherit
+    // the previous identity, nonce, scope, or pending authorization request.
+    if (token !== this.tokenData?.refresh_token) this.clearStoredTokens();
+    const version = this.sessionVersion;
+    const request = this.performRefresh(token, scope, version);
+    this.refreshPromise = request;
+    this.refreshContext = { token, scope, version };
+    try {
+      return await request;
+    } finally {
+      if (this.refreshPromise === request) {
+        this.refreshPromise = undefined;
+        this.refreshContext = undefined;
+      }
     }
-
-    const response = await EnvironmentUtils.getFetch()(
-      `${this.server}/oauth2/token`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Authorization: `Basic ${EnvironmentUtils.btoa(`${this.clientId}:${this.clientSecret}`)}`,
-        },
-        body: params.toString(),
-      },
-    );
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      this.clearStoredTokens();
-      throw new OAuth2Error(
-        `Token refresh failed: ${response.status} ${response.statusText}`,
-        response.status,
-        errorData.error,
-      );
-    }
-
-    const tokenResponse: TokenResponse = await response.json();
-    this.saveTokens(tokenResponse);
-    return tokenResponse;
   }
 
-  /**
-   * 저장된 토큰 로드
-   */
-  private loadStoredTokens(): void {
-    if (!this.storage) return;
-
+  private async performRefresh(
+    token: string,
+    scope: string | undefined,
+    version: number,
+  ): Promise<TokenResponse> {
     try {
-      const stored = this.storage.getItem(`flowauth_tokens_${this.clientId}`);
-      if (stored) {
-        this.tokenData = JSON.parse(stored);
-        // 만료된 토큰 제거
-        if (this.isTokenExpired()) {
-          this.clearStoredTokens();
-        }
+      const params = new URLSearchParams({
+        grant_type: "refresh_token",
+        client_id: this.clientId,
+        refresh_token: token,
+      });
+      if (scope !== undefined) params.set("scope", scope);
+      const response = await EnvironmentUtils.getFetch()(
+        `${this.server}/oauth2/token`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            Authorization: `Basic ${EnvironmentUtils.btoa(`${this.clientId}:${this.clientSecret}`)}`,
+          },
+          body: params.toString(),
+        },
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new OAuth2Error(
+          `Token refresh failed: ${response.status} ${response.statusText}`,
+          response.status,
+          errorData.error,
+        );
+      }
+      const tokens: TokenResponse = await response.json();
+      this.assertSessionVersion(version);
+      this.saveTokens({
+        ...tokens,
+        refresh_token:
+          tokens.refresh_token === undefined ? token : tokens.refresh_token,
+        id_token:
+          tokens.id_token === undefined
+            ? this.tokenData?.id_token
+            : tokens.id_token,
+        scope:
+          tokens.scope === undefined
+            ? (scope ?? this.tokenData?.scope)
+            : tokens.scope,
+      });
+      return tokens;
+    } catch (error) {
+      // A stale request must not clear a newer login's tokens.
+      if (version === this.sessionVersion) this.clearStoredTokens();
+      throw error;
+    }
+  }
+
+  /** Restore only structurally valid token data; retain refreshable expiry. */
+  private loadStoredTokens(): void {
+    try {
+      const stored = this.storage?.getItem(`flowauth_tokens_${this.clientId}`);
+      if (!stored) return;
+      const data: unknown = JSON.parse(stored);
+      if (!data || typeof data !== "object" || Array.isArray(data)) {
+        throw new Error("Invalid stored token data");
+      }
+      const value = data as Record<string, unknown>;
+      if (
+        typeof value.access_token !== "string" ||
+        !value.access_token ||
+        typeof value.token_type !== "string" ||
+        !value.token_type ||
+        typeof value.expires_at !== "number" ||
+        !Number.isFinite(value.expires_at) ||
+        ["refresh_token", "id_token", "scope"].some(
+          field =>
+            value[field] !== undefined && typeof value[field] !== "string",
+        )
+      ) {
+        throw new Error("Invalid stored token data");
+      }
+      this.tokenData = {
+        access_token: value.access_token,
+        token_type: value.token_type,
+        expires_at: value.expires_at,
+        refresh_token:
+          typeof value.refresh_token === "string"
+            ? value.refresh_token
+            : undefined,
+        id_token:
+          typeof value.id_token === "string" ? value.id_token : undefined,
+        scope: typeof value.scope === "string" ? value.scope : undefined,
+      };
+      if (this.isTokenExpired() && !this.tokenData.refresh_token) {
+        this.clearStoredTokens();
       }
     } catch {
-      // Silently handle storage errors during initialization
-      // This prevents client creation from failing due to storage issues
+      this.tokenData = undefined;
+      // Unavailable storage must not make unvalidated data usable in memory.
+      try {
+        this.storage?.removeItem(`flowauth_tokens_${this.clientId}`);
+      } catch {
+        // Persistence is unavailable; construction continues without a session.
+      }
     }
   }
 
-  /**
-   * 토큰 저장
-   */
+  /** Update memory even when persistence is unavailable. Expiry is in milliseconds. */
   private saveTokens(tokenResponse: TokenResponse): void {
-    if (!this.storage) return;
-
-    const expiresAt = Date.now() + (tokenResponse.expires_in || 3600) * 1000;
+    const lifetime =
+      tokenResponse.expires_in === undefined ? 3600 : tokenResponse.expires_in;
+    const expiresAt = Date.now() + lifetime * 1000;
+    if (
+      typeof lifetime !== "number" ||
+      !Number.isFinite(lifetime) ||
+      lifetime < 0 ||
+      !Number.isFinite(expiresAt) ||
+      typeof tokenResponse.access_token !== "string" ||
+      !tokenResponse.access_token ||
+      typeof tokenResponse.token_type !== "string" ||
+      !tokenResponse.token_type ||
+      [
+        tokenResponse.refresh_token,
+        tokenResponse.id_token,
+        tokenResponse.scope,
+      ].some(value => value !== undefined && typeof value !== "string")
+    ) {
+      throw new OAuth2Error("Invalid token response or expiration");
+    }
     this.tokenData = {
       access_token: tokenResponse.access_token,
       refresh_token: tokenResponse.refresh_token,
@@ -441,72 +510,49 @@ export class FlowAuthClient {
       expires_at: expiresAt,
       scope: tokenResponse.scope,
     };
-
-    // ID 토큰 별도 저장
-    if (tokenResponse.id_token) {
-      this.idToken = tokenResponse.id_token;
-    }
-
     try {
-      this.storage.setItem(
+      this.storage?.setItem(
         `flowauth_tokens_${this.clientId}`,
         JSON.stringify(this.tokenData),
       );
     } catch {
-      // Silently handle storage errors during token saving
-      // This prevents token saving from failing due to storage issues
+      // A blocked/full store degrades to memory for this instance only.
     }
   }
 
-  /**
-   * 저장된 토큰 제거
-   */
+  /** Invalidate pending operations before attempting fallible persistent removal. */
   private clearStoredTokens(): void {
-    if (!this.storage) return;
-
-    this.storage.removeItem(`flowauth_tokens_${this.clientId}`);
+    this.sessionVersion++;
     this.tokenData = undefined;
+    this.nonce = undefined;
+    this.pendingNonce = undefined;
+    this.refreshPromise = undefined;
+    this.refreshContext = undefined;
+    this.storage?.removeItem(`flowauth_tokens_${this.clientId}`);
   }
 
-  /**
-   * 토큰 만료 확인
-   */
+  private assertSessionVersion(version: number): void {
+    if (version !== this.sessionVersion) {
+      throw new OAuth2Error("Authentication state changed during request");
+    }
+  }
+
   private isTokenExpired(): boolean {
+    const expiry = this.tokenData?.expires_at;
     return (
-      !this.tokenData ||
-      !this.tokenData.expires_at ||
-      Date.now() >= this.tokenData.expires_at
+      typeof expiry !== "number" ||
+      !Number.isFinite(expiry) ||
+      Date.now() >= expiry
     );
   }
 
-  /**
-   * 자동 토큰 리프래시
-   */
   private async refreshTokenIfNeeded(): Promise<void> {
     if (
-      !this.autoRefresh ||
-      !this.tokenData?.refresh_token ||
-      !this.isTokenExpired()
+      this.autoRefresh &&
+      this.tokenData?.refresh_token &&
+      this.isTokenExpired()
     ) {
-      return;
-    }
-
-    if (this.refreshPromise) {
-      // 이미 리프래시 중이면 기다림
-      await this.refreshPromise;
-      return;
-    }
-
-    this.refreshPromise = this.refreshToken(this.tokenData.refresh_token);
-    try {
-      const newTokens = await this.refreshPromise;
-      this.saveTokens(newTokens);
-    } catch (error) {
-      // Clear tokens on refresh failure and re-throw
-      this.clearStoredTokens();
-      throw error;
-    } finally {
-      this.refreshPromise = undefined;
+      await this.refreshToken();
     }
   }
 
@@ -689,7 +735,9 @@ export class FlowAuthClient {
    * ```
    */
   getStoredAccessToken(): string | null {
-    return this.tokenData?.access_token || null;
+    return this.isTokenExpired()
+      ? null
+      : (this.tokenData?.access_token ?? null);
   }
 
   /**
@@ -710,8 +758,9 @@ export class FlowAuthClient {
    * ```
    */
   async validateToken(accessToken?: string): Promise<boolean> {
-    const token = accessToken || this.getStoredAccessToken();
+    const token = accessToken ?? this.getStoredAccessToken();
     if (!token) return false;
+    const version = this.sessionVersion;
 
     try {
       const response = await EnvironmentUtils.getFetch()(
@@ -722,7 +771,10 @@ export class FlowAuthClient {
           },
         },
       );
-      return response.ok;
+      return (
+        response.ok &&
+        (accessToken !== undefined || version === this.sessionVersion)
+      );
     } catch {
       return false;
     }
@@ -762,7 +814,7 @@ export class FlowAuthClient {
    * ```
    */
   getTokenInfo(): TokenData | null {
-    return this.tokenData || null;
+    return this.tokenData ? { ...this.tokenData } : null;
   }
 
   /**
@@ -815,23 +867,31 @@ export class FlowAuthClient {
     idToken?: string,
     expectedNonce?: string,
   ): Promise<IdTokenPayload> {
-    const token = idToken || this.idToken;
+    const token = idToken ?? this.getStoredIdToken();
     if (!token) {
       throw new Error("No ID token available");
     }
 
+    const version = this.sessionVersion;
+    const nonce = expectedNonce ?? this.nonce;
     const discovery = await this.getDiscoveryDocument();
+    if (idToken === undefined) this.assertSessionVersion(version);
     if (!discovery.jwks_uri) {
       throw new Error("JWKS URI not found in discovery document");
     }
 
-    return await OIDCUtils.validateAndParseIdTokenWithCrypto(
+    if (discovery.issuer !== this.server) {
+      throw new Error("Discovery issuer does not match configured server");
+    }
+    const payload = await OIDCUtils.validateAndParseIdTokenWithCrypto(
       token,
       discovery.jwks_uri,
-      discovery.issuer,
+      this.server,
       this.clientId,
-      expectedNonce || this.nonce,
+      nonce,
     );
+    if (idToken === undefined) this.assertSessionVersion(version);
+    return payload;
   }
 
   /**
@@ -850,7 +910,7 @@ export class FlowAuthClient {
    * ```
    */
   getStoredIdToken(): string | null {
-    return this.idToken || null;
+    return this.tokenData?.id_token ?? null;
   }
 
   /**

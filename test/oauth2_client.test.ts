@@ -298,9 +298,12 @@ describe("FlowAuthClient", () => {
         });
 
         (
-          testClient as unknown as { tokenData: { access_token: string } }
+          testClient as unknown as {
+            tokenData: { access_token: string; expires_at: number };
+          }
         ).tokenData = {
           access_token: "access-token",
+          expires_at: Date.now() + 3600000,
         };
 
         const userInfo = await testClient.getUserInfo();
@@ -331,9 +334,12 @@ describe("FlowAuthClient", () => {
         });
 
         (
-          testClient as unknown as { tokenData: { access_token: string } }
+          testClient as unknown as {
+            tokenData: { access_token: string; expires_at: number };
+          }
         ).tokenData = {
           access_token: "access-token",
+          expires_at: Date.now() + 3600000,
         };
 
         const userInfo = await testClient.getUserInfo();

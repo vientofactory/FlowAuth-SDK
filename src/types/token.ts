@@ -44,7 +44,7 @@ export interface TokenData {
   id_token?: string;
   /** 토큰 타입 */
   token_type: string;
-  /** 토큰 만료 시각 (Unix timestamp) */
+  /** Access token expiration as Unix time in milliseconds. */
   expires_at: number;
   /** 토큰 스코프 */
   scope?: string;

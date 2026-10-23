@@ -29,7 +29,6 @@ npm install flowauth-oauth2-client
 ```typescript
 import {
   FlowAuthClient,
-  EnvironmentUtils,
   MemoryStorage,
   OAuth2Scope,
   type OAuth2ClientConfig,
@@ -94,15 +93,7 @@ export async function finishLogin(
     throw new Error("Missing ID token");
   }
 
-  // Reject unsupported algorithms before entering the SDK verifier.
-  const { header } = EnvironmentUtils.parseJwt(tokens.id_token);
-  if (header.alg !== "RS256" && header.alg !== "ES256") {
-    throw new Error("Unsupported ID token algorithm");
-  }
   const identity = await client.validateIdToken(tokens.id_token, pending.nonce);
-  if (!Number.isFinite(identity.exp) || Date.now() >= identity.exp * 1000) {
-    throw new Error("Missing or expired ID token expiration");
-  }
   const userInfo = await client.getUserInfo();
   if (userInfo.sub !== identity.sub) {
     client.logout();
@@ -112,7 +103,7 @@ export async function finishLogin(
 }
 ```
 
-현재 SDK 검증 구현에는 `HS256` 헤더에서 서명·클레임 검사를 건너뛰는 경로가 남아 있습니다. 위 예제는 검증 전에 `RS256`/`ES256`만 허용하고 유효한 만료 시간도 확인합니다. `validateIdToken` 호출만으로 모든 입력이 엄격하게 검증된다고 가정하지 마세요. 이 README 정리는 해당 구현을 수정하지 않습니다.
+`4.3.4`부터 ID 토큰 검증은 `RS256`/`ES256`만 허용하며 서명과 필수 클레임을 함께 검사합니다. `HS256`, 지원하지 않는 알고리즘, 유효하지 않거나 현재 시각에 도달한 만료 시간은 거부합니다. Discovery의 issuer도 설정한 `server`와 정확히 일치해야 합니다. `OIDCUtils.validateAndParseIdToken`은 서명을 검사하지 않는 호환용 클레임 파서이므로 인증 판단에는 사용하지 마세요.
 
 SDK는 state·PKCE·nonce를 콜백 사이에 자동 영속화하지 않습니다. `handleCallback`의 `expectedState`가 비어 있으면 state 검사를 생략하므로, 세션이 없는 콜백을 호출 전에 거부해야 합니다. `exchangeCode`는 ID 토큰을 자동 검증하지 않으며, OIDC에서는 위와 같이 검증 단계를 명시합니다. 예제의 10분은 애플리케이션이 정한 로그인 시도 유효기간입니다.
 
@@ -146,10 +137,17 @@ SDK는 state·PKCE·nonce를 콜백 사이에 자동 영속화하지 않습니�
 - `validateToken(accessToken?)`: UserInfo 엔드포인트의 성공 여부를 반환; JWT 서명 검증 메서드가 아님
 - `validateIdToken(idToken?, expectedNonce?)`: Discovery/JWKS를 사용해 RSA/ECDSA 서명과 클레임 검증. 콜백 요청 간에는 예상 nonce를 명시적으로 전달
 - `getDiscoveryDocument()`: 인스턴스 내에 Discovery 문서를 캐시
-- `getStoredAccessToken()`, `getStoredIdToken()`, `getTokenInfo()`: 로컬 값 조회. 반환 자체가 검증이나 갱신을 의미하지 않음
+- `getStoredAccessToken()`: 만료되지 않은 로컬 access token만 반환; 만료·누락 시 `null`
+- `getStoredIdToken()`, `getTokenInfo()`: 로컬 ID 토큰과 토큰 메타데이터 복사본 조회. 반환 자체가 서명 검증이나 갱신을 의미하지 않음
 - `logout()`: 저장된 토큰 데이터를 제거. 서버 토큰 폐기·SSO 세션 종료 요청은 수행하지 않음
 
-현재 `logout()`은 인스턴스의 별도 ID 토큰/nonce 필드를 초기화하지 않으므로 로그아웃 후 해당 클라이언트 인스턴스를 폐기하세요. 저장된 만료 토큰은 생성 시 제거되므로 인스턴스를 재생성한 뒤 자동 갱신을 기대하지 말고 사용자별 토큰 수명주기를 설계해야 합니다.
+만료된 access token에 refresh token이 있으면 재생성한 인스턴스에서도 갱신할 수 있도록 보존합니다. 저장된 ID 토큰도 복원하지만, 사용 전에는 `validateIdToken`으로 검증해야 합니다. 유효하지 않은 저장 데이터와 갱신할 수 없는 만료 세션은 제거합니다.
+
+같은 클라이언트 인스턴스에서 동일 세션·refresh token·scope의 동시 갱신은 하나의 요청을 공유합니다. 여러 인스턴스·프로세스가 하나의 토큰 저장소를 공유하는 경우의 동기화는 애플리케이션에서 처리합니다. 진행 중인 요청과 다른 scope의 갱신은 거부합니다. 갱신 응답에서 refresh token이나 ID 토큰이 생략되면 같은 세션의 기존 값을 유지하고, scope가 생략되면 요청한 scope 또는 기존 scope를 유지합니다. 새 코드 교환이나 다른 refresh token으로 시작한 세션에는 이전 ID 토큰·nonce·scope를 넘기지 않습니다. refresh token이 회전되면 새 값을 저장합니다.
+
+`expires_in`은 유한한 0 이상의 초 단위 숫자여야 합니다. `0`은 즉시 만료이며, 생략된 경우 기존 호환 기본값인 3600초를 사용합니다. `getTokenInfo().expires_at`은 밀리초 단위 시각입니다.
+
+`logout()`은 메모리의 토큰·nonce와 진행 중인 요청의 저장 권한을 먼저 제거합니다. 로그아웃 전이나 이전 세션에서 시작한 응답이 나중에 도착해도 세션을 복원하거나 새 세션을 지우지 않습니다. 저장소 삭제가 실패하면 호출부에 오류를 전달하며, 메모리는 이미 비워진 상태입니다. 호출부는 해당 저장소의 영속 데이터 제거 실패를 처리해야 합니다. 저장소 읽기·쓰기가 차단된 환경에서는 인스턴스 메모리만 사용할 수 있으며 새 인스턴스로의 영속화는 보장하지 않습니다.
 
 ### 저장소
 
