@@ -176,7 +176,11 @@ export class EnvironmentUtils {
     try {
       const { payload } = this.parseJwt(token);
       const currentTime = Math.floor(Date.now() / 1000);
-      return typeof payload.exp === "number" && payload.exp < currentTime;
+      return (
+        typeof payload.exp !== "number" ||
+        !Number.isFinite(payload.exp) ||
+        currentTime >= payload.exp
+      );
     } catch {
       return true; // 파싱 실패 시 만료된 것으로 간주
     }

@@ -8,6 +8,7 @@ import { EnvironmentUtils } from "../src/utils/environment";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { createRequire } from "node:module";
 
 describe("Storage Implementations", () => {
   describe("MemoryStorage", () => {
@@ -59,21 +60,25 @@ describe("Storage Implementations", () => {
   describe("FileStorage", () => {
     let storage: FileStorage;
     let testFilePath: string;
+    let testDirectory: string;
 
     beforeEach(() => {
-      testFilePath = path.join(__dirname, "../../test-tokens.json");
+      // Vitest loads source as ESM; published CommonJS supplies this binding.
+      vi.stubGlobal(
+        "require",
+        createRequire(path.join(process.cwd(), "package.json")),
+      );
+      testDirectory = fs.mkdtempSync(
+        path.join(os.tmpdir(), "flowauth-storage-"),
+      );
+      testFilePath = path.join(testDirectory, "tokens.json");
       storage = new FileStorage(testFilePath);
     });
 
     afterEach(() => {
-      // Clean up test file
-      try {
-        if (fs.existsSync(testFilePath)) {
-          fs.unlinkSync(testFilePath);
-        }
-      } catch {
-        // Ignore cleanup errors
-      }
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+      fs.rmSync(testDirectory, { recursive: true, force: true });
     });
 
     it("should store and retrieve values", () => {
@@ -81,9 +86,7 @@ describe("Storage Implementations", () => {
       expect(storage.getItem("test_key")).toBe("test_value");
     });
 
-    it.skip("should persist data across instances", () => {
-      // Skip this test as Vitest may mock file system operations
-      // This functionality works in real Node.js environment
+    it("should persist data across instances", () => {
       storage.setItem("persistent_key", "persistent_value");
       const newStorage = new FileStorage(testFilePath);
       expect(newStorage.getItem("persistent_key")).toBe("persistent_value");
@@ -115,7 +118,7 @@ describe("Storage Implementations", () => {
 
     it("should handle file I/O errors gracefully", () => {
       // Create a temporary read-only directory for testing
-      const tempDir = path.join(os.tmpdir(), "readonly-test");
+      const tempDir = path.join(testDirectory, "readonly");
       const testFilePath = path.join(tempDir, "test-storage.json");
 
       try {
@@ -143,8 +146,7 @@ describe("Storage Implementations", () => {
       }
     });
 
-    it.skip("should handle complex JSON data", () => {
-      // Skip this test as Vitest may mock file system operations
+    it("should handle complex JSON data", () => {
       const tokenData = {
         access_token: "abc123",
         refresh_token: "refresh456",
@@ -159,6 +161,103 @@ describe("Storage Implementations", () => {
       // Verify it persists
       const newStorage = new FileStorage(testFilePath);
       expect(newStorage.getItem("token_data")).toBe(jsonValue);
+    });
+  });
+
+  describe("Persistent token removal failures", () => {
+    let directory: string;
+    let file: string;
+    let storage: FileStorage;
+
+    beforeEach(() => {
+      vi.stubGlobal(
+        "require",
+        createRequire(path.join(process.cwd(), "package.json")),
+      );
+      directory = fs.mkdtempSync(path.join(os.tmpdir(), "flowauth-logout-"));
+      file = path.join(directory, "tokens.json");
+      storage = new FileStorage(file);
+      storage.setItem("key", "credential");
+    });
+    afterEach(() => {
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+      fs.rmSync(directory, { recursive: true, force: true });
+    });
+
+    it.each(["removeItem", "clear"] as const)(
+      "reports a failed file write from %s after clearing memory",
+      operation => {
+        const nodeFs = createRequire(path.join(process.cwd(), "package.json"))(
+          "fs",
+        ) as typeof fs;
+        vi.spyOn(nodeFs, "writeFileSync").mockImplementation(() => {
+          throw new Error("Disk unavailable");
+        });
+        expect(() =>
+          operation === "clear" ? storage.clear() : storage.removeItem("key"),
+        ).toThrow("Failed to remove persisted token data");
+        expect(storage.getItem("key")).toBeNull();
+        expect(JSON.parse(fs.readFileSync(file, "utf8")).key).toBe(
+          "credential",
+        );
+      },
+    );
+
+    it("propagates FileStorage logout failure after clearing the client session", async () => {
+      const { FlowAuthClient } = await import("../src");
+      const tokenKey = "flowauth_tokens_client";
+      storage.setItem(
+        tokenKey,
+        JSON.stringify({
+          access_token: "access",
+          refresh_token: "refresh",
+          id_token: "id",
+          token_type: "Bearer",
+          expires_at: Date.now() + 3600000,
+        }),
+      );
+      const client = new FlowAuthClient({
+        server: "https://issuer.example.com",
+        clientId: "client",
+        clientSecret: "secret",
+        redirectUri: "https://app.example.com/callback",
+        storage,
+      });
+      const nodeFs = createRequire(path.join(process.cwd(), "package.json"))(
+        "fs",
+      ) as typeof fs;
+      vi.spyOn(nodeFs, "writeFileSync").mockImplementation(() => {
+        throw new Error("Disk unavailable");
+      });
+      expect(() => client.logout()).toThrow(
+        "Failed to remove persisted token data",
+      );
+      expect(client.getTokenInfo()).toBeNull();
+      expect(client.getStoredIdToken()).toBeNull();
+      expect(new FileStorage(file).getItem(tokenKey)).not.toBeNull();
+    });
+
+    it("removes a logged-out session from disk before a new client reloads it", async () => {
+      const { FlowAuthClient } = await import("../src");
+      const tokenKey = "flowauth_tokens_client";
+      storage.setItem(
+        tokenKey,
+        JSON.stringify({
+          access_token: "access",
+          token_type: "Bearer",
+          expires_at: Date.now() + 3600000,
+        }),
+      );
+      const client = new FlowAuthClient({
+        server: "https://issuer.example.com",
+        clientId: "client",
+        clientSecret: "secret",
+        redirectUri: "https://app.example.com/callback",
+        storage,
+      });
+      client.logout();
+      expect(new FileStorage(file).getItem(tokenKey)).toBeNull();
     });
   });
 
