@@ -73,14 +73,20 @@ export class FileStorage implements TokenStorage {
     }
   }
 
-  private saveToFile(): void {
+  /** Keep optional writes nonfatal, but report failed credential removal. */
+  private saveToFile(requirePersistence = false): void {
     if (!this.fs) return;
 
     try {
       const obj = Object.fromEntries(this.data);
       this.fs.writeFileSync(this.filePath, JSON.stringify(obj, null, 2));
-    } catch {
-      // Silently handle file saving errors
+    } catch (error) {
+      if (requirePersistence) {
+        throw new Error("Failed to remove persisted token data", {
+          cause: error,
+        });
+      }
+      // Optional writes may continue in memory when the file is unavailable.
     }
   }
 
@@ -95,12 +101,12 @@ export class FileStorage implements TokenStorage {
 
   removeItem(key: string): void {
     this.data.delete(key);
-    this.saveToFile();
+    this.saveToFile(true);
   }
 
   clear(): void {
     this.data.clear();
-    this.saveToFile();
+    this.saveToFile(true);
   }
 }
 
